@@ -1,0 +1,14 @@
+# 数字层后端的依赖。
+#
+#   pip install -r twin/requirements.txt
+#
+# 只有这一个：后端用 websockets 起状态帧广播（30 Hz 定长二进制帧）。
+# 静态文件服务走标准库 http.server，动作库与配置走标准库 json，都不占依赖。
+#
+# twin/tools/ 下的 Python 脚本（fetch_assets.py / serve.py / library.py）也只用标准库，
+# 所以 clone 下来不装任何东西就能跑资产下载与动作库校验。
+# twin/tools/*.mjs 是 Node 脚本，不走这里（它们零依赖，用 Node 内置的 WebSocket 与 fetch）。
+#
+# 接实机时再加 lerobot（串口读关节角），装进同一个环境，不要另开一个。
+
+websockets==17.1

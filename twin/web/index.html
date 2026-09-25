@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数字层 · SO-101</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./styles.css">
+
+<!-- importmap 必须出现在任何 type="module" 脚本之前。
+     "three/" 这条前缀映射是必须的：urdf-loader 内部 import 的是
+     'three/examples/jsm/loaders/STLLoader.js'，只映射 "three" 会 404。 -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.js",
+    "three/": "./vendor/three/",
+    "urdf-loader": "./vendor/urdf-loader/src/URDFLoader.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<div id="viewport"></div>
+
+<div id="hint">拖拽旋转 · 滚轮缩放 · 右键平移</div>
+
+<div id="panel"></div>
+
+<pre id="diag" hidden></pre>
+
+<div id="loading">正在加载模型…</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

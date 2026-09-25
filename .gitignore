@@ -1,0 +1,36 @@
+# ---- 工作目录 ----
+# 开发时的记忆、计划与临时产物，与代码无关
+.workbuddy/
+
+# 工具跑出来的临时东西：截图、探测脚本、无头浏览器 profile
+# （tools/cdp.mjs 与 probe.mjs / selftest.mjs 都写这里）
+.tmp/
+
+
+# ---- 第三方资产 ----
+# 不进仓库，clone 之后跑一次 twin/tools/fetch_assets.py 拉下来。
+# 版本与来源见 twin/web/vendor/SOURCES.md，文件清单在脚本里钉死。
+twin/web/vendor/*
+!twin/web/vendor/SOURCES.md
+twin/web/models/
+
+
+# ---- 运行产物 ----
+# 后端每次启动写一个 JSONL 留档（只保留最近 5 个），自检会存一张截图
+twin/run/*.jsonl
+twin/selfcheck.png
+
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+
+# ---- 编辑器与系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,10 @@
+# 统一用 LF 换行。
+# Windows 上 git 默认会把 checkout 出来的文件转成 CRLF，那会让同一份文件在不同
+# 平台上显示成"被改过"，diff 也变得难读。锁死 LF，各平台行为一致。
+* text=auto eol=lf
+
+# 二进制文件不做换行转换
+*.png binary
+*.jpg binary
+*.pdf binary
+*.stl binary
