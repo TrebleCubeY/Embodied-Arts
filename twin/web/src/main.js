@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 import { JOINT_ORDER, DEG2RAD, MODE_NAMES, defaultStateUrl } from './frame.js';
-import { showPanel, RED_BLOCK, createStage, addGround, addRedBlock } from './stage.js';
+import { RED_BLOCK, createStage, addGround, addRedBlock } from './stage.js';
 import { createBlockRig, jawOpeningMm } from './block.js';
 import {
   loadRobot,
@@ -14,7 +14,8 @@ import {
 import { attachControls } from './controls.js';
 import { createJointPanel } from './joint-panel.js';
 import { createLink } from './net.js';
-import { createViewState, FOLLOW } from './view-state.js';
+import { createViewState, FOLLOW, VIEW_STATE_LABEL } from './view-state.js';
+import { createConsole, createTopline } from './console.js';
 import { installDebug } from './debug.js';
 
 const URDF_URL = './models/so101/so101_new_calib.urdf';
@@ -23,17 +24,22 @@ const URDF_URL = './models/so101/so101_new_calib.urdf';
 // 小了顺滑但会抹掉微小残差，大了残差保留但大动作能看出阶梯。现场调。
 const INTERP_LAMBDA = 15;
 
+// 目标与实际差多少算"臂在动"。和 console.js 里那个阈值是一回事，两处都改。
+const MOVING_DEG = 0.5;
+
 const viewport = document.getElementById('viewport');
 const loadingEl = document.getElementById('loading');
-const panelEl = document.getElementById('panel');
+const loadingMsg = loadingEl.querySelector('.msg');
 
-if (!showPanel) panelEl.hidden = true;
+// 屏幕右半：模式 / 关节角 / 代码轮转 / 事件。手动控制也在它里面（最后一格抽屉）。
+const consoleEl = document.getElementById('console');
+const topline = createTopline(document.getElementById('topline'));
 
 // WebGL 起不来时不要白屏：把原因写下来，自检脚本据此区分「环境问题」和「代码写错」
 function showError(msg) {
   loadingEl.hidden = false;
   loadingEl.classList.add('err');
-  loadingEl.textContent = msg;
+  loadingMsg.textContent = msg;
   window.__TWIN__ = { ready: false, error: msg };
   console.error('[twin]', msg);
 }
@@ -54,6 +60,7 @@ if (stage) {
   let panel = null;
   let link = null;
   let block = null;
+  let codeLayer = null;
   const tmpVec = new THREE.Vector3();
 
   // 目标姿态与最近一帧的数值（弧度 / 度各存一份，都是预分配好的数组）。
@@ -70,7 +77,10 @@ if (stage) {
   };
 
   const view = createViewState({
-    onChange(next, prev) {
+    onChange(next, prev, why) {
+      // 断流/重连导致的冻结与解冻不往事件里写：上面那条连接状态已经说过了，
+      // 再写一遍会让人以为"断流"是独立发生的事。
+      if (why !== 'link') codeLayer?.push('view', VIEW_STATE_LABEL[next] ?? next);
       console.log(`[twin] 视图状态 ${prev} → ${next}`);
     },
   });
@@ -79,6 +89,12 @@ if (stage) {
   function onLinkState(stats) {
     if (stats.state === 'open') view.thaw('link');
     else view.freeze('link');
+    topline.sync({
+      linkState: stats.state,
+      hz: stats.hz,
+      paused: stats.paused,
+      viewState: view.state,
+    });
   }
 
   loadRobot(scene, URDF_URL, {
@@ -103,20 +119,25 @@ if (stage) {
       controls = attachControls(camera, renderer.domElement, framing.center);
 
       const joints = listJoints(r);
-      panel = showPanel
-        ? createJointPanel(panelEl, joints, {
-            onManual: () => view.takeOver('panel'),
-            onPause: () => link?.send({ type: 'pause' }),
-            onResume: () => link?.send({ type: 'resume' }),
-            onFollow: () => view.release('panel'),
-            onKeyframe: () => {
-              const deg = status.appliedDeg.map((v) => Number(v.toFixed(2)));
-              if (!link?.send({ type: 'keyframe', joints: deg })) {
-                console.warn('[twin] 后端没连上，这个姿态没记下来');
-              }
-            },
-          })
-        : null;
+
+      codeLayer = createConsole(consoleEl, { joints });
+      codeLayer.start();
+      codeLayer.push('link', '页面就绪');
+
+      if (codeLayer.panelEl) {
+        panel = createJointPanel(codeLayer.panelEl, joints, {
+          onManual: () => view.takeOver('panel'),
+          onPause: () => link?.send({ type: 'pause' }),
+          onResume: () => link?.send({ type: 'resume' }),
+          onFollow: () => view.release('panel'),
+          onKeyframe: () => {
+            const deg = status.appliedDeg.map((v) => Number(v.toFixed(2)));
+            if (!link?.send({ type: 'keyframe', joints: deg })) {
+              console.warn('[twin] 后端没连上，这个姿态没记下来');
+            }
+          },
+        });
+      }
 
       installDebug({
         robot: r,
@@ -134,6 +155,7 @@ if (stage) {
 
       const stateUrl = defaultStateUrl();
       if (stateUrl) {
+        let lastLink = null;
         link = createLink({
           url: stateUrl,
           onFrame(frame) {
@@ -146,12 +168,24 @@ if (stage) {
             status.blend = frame.blend;
             status.grip = frame.grip;
           },
-          onState: onLinkState,
+          onState(stats) {
+            if (stats.state !== lastLink) {
+              lastLink = stats.state;
+              codeLayer.push('link', `状态帧 ${stats.state}`);
+            }
+            onLinkState(stats);
+          },
           onEvent(msg) {
-            if (msg.type === 'action') console.log(`[twin] 轮到 ${msg.title}`);
+            if (msg.type === 'action') {
+              codeLayer.push('action', `轮到 ${msg.title}`);
+              codeLayer.setAction(msg);
+            } else if (msg.type === 'state') {
+              codeLayer.push('transport', msg.paused ? '后端已暂停' : '后端已恢复');
+            }
           },
         });
       } else {
+        codeLayer.push('link', '?ws=0：不连后端，只显示静态模型');
         console.log('[twin] ?ws=0：不连后端，只显示静态模型');
       }
 
@@ -192,18 +226,36 @@ if (stage) {
     controls?.update();
     renderer.render(scene, camera);
 
-    panel?.sync({
+    // 目标与实际差多少。夹爪不参与：它开合几十度属于正常动作，会把这个值顶起来
+    let lag = 0;
+    for (let i = 0; i < 5; i += 1) {
+      lag = Math.max(lag, Math.abs(status.targetDeg[i] - status.appliedDeg[i]));
+    }
+
+    const linkState = link?.stats.state ?? 'idle';
+    const hz = link?.stats.hz;
+    const paused = !!link?.stats.paused;
+
+    topline.sync({ linkState, hz, paused, viewState: state });
+
+    codeLayer?.sync({
       viewState: state,
-      appliedRad,
-      linkState: link?.stats.state ?? 'idle',
-      hz: link?.stats.hz,
-      paused: link?.stats.paused,
+      paused,
+      mode: status.mode,
+      blend: status.blend,
+      grip: status.grip,
+      lag,
+      targetDeg: status.targetDeg,
+      actualDeg: status.actualDeg,
+      appliedDeg: status.appliedDeg,
     });
+
+    panel?.sync({ viewState: state, appliedRad, linkState, hz, paused });
 
     const dbg = window.__TWIN__;
     if (dbg && dbg.ready) {
       dbg.viewState = state;
-      dbg.paused = !!link?.stats.paused;
+      dbg.paused = paused;
       dbg.twin.targetDeg = status.targetDeg;
       dbg.twin.actualDeg = status.actualDeg;
       dbg.twin.appliedDeg = status.appliedDeg;
@@ -211,6 +263,7 @@ if (stage) {
       dbg.twin.modeName = MODE_NAMES[status.mode] ?? String(status.mode);
       dbg.twin.blend = status.blend;
       dbg.twin.grip = status.grip;
+      dbg.twin.lag = Number(lag.toFixed(3));
       if (link) Object.assign(dbg.link, link.stats);
 
       // 方块的状态给自检看：是不是被夹住了、现在在哪、夹爪开口多少

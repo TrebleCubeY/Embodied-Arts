@@ -1,6 +1,9 @@
-// 手动控制面板：6 个关节滑块 + 暂停 / 回到跟随 / 记录姿态 / 回零位。
+// 手动控制：6 个关节滑块 + 暂停 / 回到跟随 / 记录姿态 / 回零位。
 //
-// 它不再是"临时件"—— 接管要长期保留（调试动作、观众自己摆都用得上）。
+// 布局上它是代码层最下面那一格，默认收起来 —— 它是给操作者调动作、也给自己上手摆用的，
+// 观众看的那一屏不需要它。按钮文案不要改：自检脚本是按文案找按钮的
+// （selftest.mjs 的 clickButton）。
+//
 // 与状态帧的分工见 view-state.js：面板管「谁写关节值」，暂停管「后端播不播」，两件正交的事。
 
 import { JOINT_HINT, RAD2DEG } from './frame.js';
@@ -18,6 +21,13 @@ const LINK_LABEL = {
   stopped: '已停止',
 };
 
+// 抽屉头那一行要短，长标签（"断流 · 冻结最后一帧"）会把这一行撑爆
+const SHORT_STATE = {
+  FOLLOW: '跟随',
+  OVERRIDE: '已接管',
+  FROZEN: '断流',
+};
+
 function mkButton(text, onClick) {
   const b = document.createElement('button');
   b.type = 'button';
@@ -29,10 +39,34 @@ function mkButton(text, onClick) {
 export function createJointPanel(container, joints, hooks = {}) {
   container.replaceChildren();
 
-  const title = document.createElement('h2');
+  // ── 抽屉头
+  const head = document.createElement('button');
+  head.type = 'button';
+  head.className = 'drawer-head';
+  const title = document.createElement('span');
   title.textContent = '手动控制';
-  container.append(title);
+  const headState = document.createElement('em');
+  headState.className = 'state';
+  headState.style.fontStyle = 'normal';
+  headState.style.letterSpacing = '0';
+  const arrow = document.createElement('span');
+  arrow.className = 'arrow';
+  arrow.textContent = '▾';
+  head.append(title, headState, arrow);
 
+  const body = document.createElement('div');
+  body.className = 'drawer-body';
+
+  container.dataset.open = '0';
+  head.setAttribute('aria-expanded', 'false');
+  head.addEventListener('click', () => {
+    const open = container.dataset.open === '1' ? '0' : '1';
+    container.dataset.open = open;
+    head.setAttribute('aria-expanded', open === '1' ? 'true' : 'false');
+  });
+  container.append(head, body);
+
+  // ── 六个关节
   const widgets = [];
 
   for (const { name, joint, lower, upper } of joints) {
@@ -43,10 +77,11 @@ export function createJointPanel(container, joints, hooks = {}) {
     lab.className = 'lab';
     const nm = document.createElement('div');
     nm.className = 'name';
-    nm.textContent = name;
+    nm.textContent = JOINT_HINT[name] ?? name;
+    nm.title = name;
     const hint = document.createElement('div');
     hint.className = 'hint';
-    hint.textContent = JOINT_HINT[name] ?? '';
+    hint.textContent = name;
     lab.append(nm, hint);
 
     const input = document.createElement('input');
@@ -55,6 +90,7 @@ export function createJointPanel(container, joints, hooks = {}) {
     input.max = String(upper);
     input.step = String((upper - lower) / 600);
     input.value = String(readJointAngle(joint));
+    input.setAttribute('aria-label', name);
 
     const val = document.createElement('div');
     val.className = 'val';
@@ -87,12 +123,13 @@ export function createJointPanel(container, joints, hooks = {}) {
 
     widgets.push(w);
     row.append(lab, input, val);
-    container.append(row);
+    body.append(row);
   }
 
+  // ── 状态与按钮
   const status = document.createElement('div');
   status.className = 'status';
-  container.append(status);
+  body.append(status);
 
   const buttons = document.createElement('div');
   buttons.className = 'buttons';
@@ -112,12 +149,12 @@ export function createJointPanel(container, joints, hooks = {}) {
     hooks.onManual?.('__all__', 0);
   });
   buttons.append(pauseBtn, followBtn, keyBtn, zeroBtn);
-  container.append(buttons);
+  body.append(buttons);
 
   const note = document.createElement('div');
   note.className = 'note';
   note.textContent = '拖滑块即接管，粘性，按「回到跟随」退出 · 单位 度';
-  container.append(note);
+  body.append(note);
 
   let lastSync = 0;
   let pausedShown = null;
@@ -142,10 +179,13 @@ export function createJointPanel(container, joints, hooks = {}) {
 
     const parts = [LINK_LABEL[s.linkState] ?? s.linkState];
     if (s.linkState === 'open' && s.hz) parts.push(`${s.hz.toFixed(0)} Hz`);
-    parts.push(VIEW_STATE_LABEL[s.viewState] ?? s.viewState);
     if (s.paused) parts.push('后端已暂停');
     const text = parts.join(' · ');
     if (status.textContent !== text) status.textContent = text;
+
+    // 抽屉收起来时也要知道谁在写关节值，所以头这一行常显
+    const stateText = SHORT_STATE[s.viewState] ?? VIEW_STATE_LABEL[s.viewState] ?? '';
+    if (headState.textContent !== stateText) headState.textContent = stateText;
 
     const p = !!s.paused;
     if (p !== pausedShown) {

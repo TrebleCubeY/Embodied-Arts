@@ -112,8 +112,24 @@ async def loop_frames(src, calib, sched, clock, cast, rec, hz, quiet):
         name, phase = src.describe(playhead)
         if name != last_action:
             last_action = name
-            title = src.lib.actions[name].title if name else "停顿"
-            cast.queue_event({"type": "action", "name": name, "title": title})
+            if name:
+                act = src.lib.actions[name]
+                title = act.title
+                ev = {
+                    "type": "action",
+                    "name": name,
+                    "title": title,
+                    # 带上这个动作的真实关键帧。屏幕右半的代码面板直接显示这份数据 ——
+                    # 面板要是自己编一份，代码层就不再是观众对齐现实的锚点。
+                    # 只往事件里加字段，68 字节状态帧一个字节不动。
+                    "path": f"twin/server/motions/{act.path.name}",
+                    "total": round(act.total, 3),
+                    "poses": act.poses,
+                }
+            else:
+                title = "停顿"
+                ev = {"type": "action", "name": None, "title": title}
+            cast.queue_event(ev)
             if not quiet:
                 print(f"  [{frame_t:7.2f}s] 轮到 {title}（{name or '—'}）")
 

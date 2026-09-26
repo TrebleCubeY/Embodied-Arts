@@ -127,7 +127,7 @@ export function countMeshes(root) {
 //
 // 数值写在线性空间里（urdf-loader 是用 setRGB 直接写进去的，没做 sRGB 转换），
 // 所以 0.85 显示出来比十六进制里的 0.85 更亮。嫌过曝就往下调一点。
-const PRINTED_WHITE = new THREE.Color().setRGB(0.85, 0.85, 0.84);
+const PRINTED_WHITE = new THREE.Color().setRGB(0.72, 0.72, 0.715);
 const isPrintedPart = (m) =>
   m.name === '3d_printed' || Boolean(m.color && m.color.r > 0.5 && m.color.b < 0.5);
 
@@ -170,7 +170,8 @@ export function frameCamera(robot, camera) {
   const vFov = THREE.MathUtils.degToRad(camera.fov);
   const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
   const fov = Math.max(Math.min(vFov, hFov), 1e-3); // 窄的那一边决定距离
-  const dist = (radius / Math.sin(fov / 2)) * 0.95;
+  // 0.95 会把整条臂顶到画面边缘。现在只占左半屏，留一成余量给它呼吸。
+  const dist = (radius / Math.sin(fov / 2)) * 1.06;
 
   // 默认机位：斜前上方，接近观众站在实机前面的角度
   const dir = new THREE.Vector3(1.0, 0.42, 1.15).normalize();

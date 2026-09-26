@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>数字层 · SO-101</title>
+<title>一臂三身 · 数字层</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="./styles.css">
 
@@ -22,15 +22,39 @@
 </head>
 <body>
 
-<div id="viewport"></div>
+<header id="masthead">
+  <div class="mast-left">
+    <ul class="bodies">
+      <li class="body off"><b>Ⅰ</b><span>实体</span><em>不在本屏</em></li>
+      <li class="body"><b>Ⅱ</b><span>数字层</span></li>
+      <li class="body"><b>Ⅲ</b><span>代码</span></li>
+    </ul>
+    <h1>
+      <span class="zh">一臂三身</span>
+      <span class="en">One Arm, Three Bodies</span>
+    </h1>
+  </div>
+  <div class="mast-gap" aria-hidden="true"></div>
+  <div id="topline" class="topline"></div>
+</header>
 
-<div id="hint">拖拽旋转 · 滚轮缩放 · 右键平移</div>
+<main id="spread">
+  <section id="stage">
+    <div id="viewport"></div>
+    <div class="crops" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <p id="hint">拖拽旋转 · 滚轮缩放 · 右键平移</p>
+    <div id="loading">
+      <span class="spinner" aria-hidden="true"></span>
+      <span class="msg">正在加载模型…</span>
+    </div>
+  </section>
 
-<div id="panel"></div>
+  <div id="rule" aria-hidden="true"></div>
+
+  <aside id="console" aria-label="代码层"></aside>
+</main>
 
 <pre id="diag" hidden></pre>
-
-<div id="loading">正在加载模型…</div>
 
 <script type="module" src="./src/main.js"></script>
 </body>

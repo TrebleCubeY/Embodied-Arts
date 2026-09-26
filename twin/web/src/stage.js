@@ -7,7 +7,9 @@ export const isSelftest = params.has('selftest');
 export const showPanel = params.get('panel') !== '0';
 export const showDiag = params.has('diag');
 
-export const BG_HEX = 0x101216;
+// 场景底色。必须和 styles.css 的 --stage 是同一个值 ——
+// 自检靠"非背景像素占比"判断模型画出来了没，两边不一致就会把整个画面算成背景。
+export const BG_HEX = 0x0e1114;
 
 export function createStage(container) {
   const renderer = new THREE.WebGLRenderer({
@@ -32,14 +34,16 @@ export function createStage(container) {
   );
 
   // STL 只有几何没有贴图，靠光照读出体积。三点光够用。
-  const key = new THREE.DirectionalLight(0xffffff, 2.6);
+  // 强度是调过的：之前 2.6/1.15 在白色打印件上直接过曝，平面糊成一片白，
+  // 分不出转折。降下来之后明暗层次才出来。
+  const key = new THREE.DirectionalLight(0xffffff, 2.0);
   key.position.set(1.4, 2.2, 1.6);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.85);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.66);
   fill.position.set(-1.8, 0.7, -1.0);
-  const rim = new THREE.DirectionalLight(0xffffff, 0.5);
+  const rim = new THREE.DirectionalLight(0xffffff, 0.38);
   rim.position.set(-0.4, 0.6, -2.0);
   scene.add(key, fill, rim);
-  scene.add(new THREE.HemisphereLight(0xdce6f2, 0x1b2029, 1.15));
+  scene.add(new THREE.HemisphereLight(0xdce6f2, 0x1b2029, 0.92));
 
   function resize() {
     const w = container.clientWidth;
@@ -60,7 +64,7 @@ export function addGround(scene, radius) {
   const span = Math.max(0.6, Math.ceil((radius * 3) / cell) * cell);
   const divisions = Math.round(span / cell);
 
-  const grid = new THREE.GridHelper(span, divisions, 0x35404f, 0x232a34);
+  const grid = new THREE.GridHelper(span, divisions, 0x2f353a, 0x1b1f23);
   grid.material.transparent = true;
   grid.material.opacity = 0.9;
   scene.add(grid);
