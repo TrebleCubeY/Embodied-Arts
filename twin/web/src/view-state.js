@@ -25,6 +25,13 @@ export const VIEW_STATE_LABEL = {
   [FROZEN]: '断流 · 冻结最后一帧',
 };
 
+/** 标题条、抽屉头这种一行里放不下长句的地方用这套短标签 */
+export const VIEW_STATE_SHORT = {
+  [FOLLOW]: '跟随',
+  [OVERRIDE]: '接管中',
+  [FROZEN]: '断流',
+};
+
 export function createViewState({ onChange } = {}) {
   let state = FOLLOW;
 

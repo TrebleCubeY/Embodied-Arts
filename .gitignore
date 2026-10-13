@@ -19,6 +19,8 @@ twin/web/models/
 # 后端每次启动写一个 JSONL 留档（只保留最近 5 个），自检会存一张截图
 twin/run/*.jsonl
 twin/selfcheck.png
+# 面板「记录姿态」攒的草稿，粘进正式动作文件之后删掉即可
+twin/server/motions/_draft.json
 
 
 # ---- Python ----

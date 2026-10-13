@@ -9,7 +9,7 @@
 // 规则写在 litKeyFor() 里，一眼能看完，加状态时一起改。
 
 import { JOINT_HINT, MODE_NAMES } from './frame.js';
-import { OVERRIDE, FROZEN, VIEW_STATE_LABEL } from './view-state.js';
+import { OVERRIDE, FROZEN, VIEW_STATE_SHORT } from './view-state.js';
 import { showPanel } from './stage.js';
 import { PLATES, motionLines } from './code-plates.js';
 
@@ -65,28 +65,49 @@ function norm(value, lower, upper) {
   return Math.min(1, Math.max(0, (value - lower) / (upper - lower)));
 }
 
-export function createConsole(root, { joints }) {
-  root.replaceChildren();
+/**
+ * 模式读数。它讲的是数字层的行为，所以长在左屏的标题条上，
+ * 不放在代码那一侧 —— 偏离发生时红出现在数字层自己那块屏。
+ */
+export function createModeBar(root) {
+  const screen = root.closest('.screen');
+  const word = el('b', 'mw', '—');
+  const chip = el('span', 'chip', '偏离');
+  chip.hidden = true;
+  const meter = el('span', 'meter');
+  const bar = el('i');
+  meter.append(bar);
+  root.append(word, chip, meter);
 
-  // ────────────────────────────────────────────── 模式
-  const modeBlock = el('section', 'block');
-  modeBlock.append(
-    (() => {
-      const h = el('h2', 'block-head');
-      h.append(el('span', 'lead', '模式'));
-      return h;
-    })(),
-  );
-  const modeRow = el('div', 'mode-row');
-  const modeWord = el('b', 'mode-word', '—');
-  const modeChip = el('span', 'chip', '偏离');
-  modeChip.hidden = true;
-  modeRow.append(modeWord, modeChip);
-  const blendWrap = el('div', 'meter');
-  const blendBar = el('i');
-  blendWrap.append(blendBar);
-  const modeNote = el('p', 'note');
-  modeBlock.append(modeRow, blendWrap, modeNote);
+  const last = { word: '', blend: -1, off: null };
+
+  return {
+    sync(s) {
+      const off = s.mode !== 0;
+      if (off !== last.off) {
+        last.off = off;
+        root.classList.toggle('off', off);
+        screen?.classList.toggle('deviating', off);
+        chip.hidden = !off;
+      }
+      const w = MODE_NAMES[s.mode] ?? String(s.mode);
+      if (w !== last.word) {
+        last.word = w;
+        word.textContent = w;
+        // 措辞放 title 里，界面上不占地方；要解释的时候鼠标停一下就有
+        word.title = MODE_SENTENCE[s.mode] ?? '';
+      }
+      const pct = Math.round(Math.min(100, Math.max(0, (s.blend / 255) * 100)));
+      if (pct !== last.blend) {
+        last.blend = pct;
+        bar.style.width = `${pct}%`;
+      }
+    },
+  };
+}
+
+export function createConsole(root, { joints, modeBar }) {
+  root.replaceChildren();
 
   // ────────────────────────────────────────────── 关节角
   const jointBlock = el('section', 'block');
@@ -166,7 +187,7 @@ export function createConsole(root, { joints }) {
   const traceList = el('ol', 'trace');
   traceBlock.append(traceList);
 
-  root.append(modeBlock, jointBlock, codeBlock, traceBlock);
+  root.append(jointBlock, codeBlock, traceBlock);
 
   // 手动控制放最后：它是给操作者用的，观众不需要，默认收起来。
   // ?panel=0 时整块不建 —— 自检脚本靠 #panel button 找按钮，所以这个 id 不能改。
@@ -295,10 +316,14 @@ export function createConsole(root, { joints }) {
   }
 
   let lastSync = 0;
+  // 最近一次状态快照。动作事件到达时用它立刻刷一次高亮与说明，
+  // 否则新动作的关键帧已经列出来了、下面那行说明还停在上一个动作（要等下一个节流刻度）。
+  let lastS = null;
 
   return {
     /** 每帧调用，内部按 SYNC_INTERVAL_MS 自己节流 */
     sync(s) {
+      lastS = s;
       // 关键帧指针不受节流影响：hold 段只有 0.1s，100ms 才看一眼会整个漏掉。
       // 它只改两个数字，不碰 DOM。
       trackKeyframes(s.targetDeg ?? [0, 0, 0, 0, 0, 0]);
@@ -307,17 +332,8 @@ export function createConsole(root, { joints }) {
       if (now - lastSync < SYNC_INTERVAL_MS) return;
       lastSync = now;
 
-      // —— 模式
-      const word = MODE_NAMES[s.mode] ?? String(s.mode);
-      if (modeWord.textContent !== word) modeWord.textContent = word;
-      const off = s.mode !== 0;
-      modeChip.hidden = !off;
-      modeWord.classList.toggle('off', off);
-      const pct = `${Math.min(100, Math.max(0, (s.blend / 255) * 100))}%`;
-      blendBar.style.width = pct;
-      blendWrap.classList.toggle('run', s.blend < 255);
-      blendWrap.classList.toggle('off', off);
-      modeNote.textContent = MODE_SENTENCE[s.mode] ?? '';
+      // —— 模式（在左屏的标题条上）
+      modeBar?.sync(s);
 
       // —— 关节角
       for (let i = 0; i < rows.length; i += 1) {
@@ -354,6 +370,7 @@ export function createConsole(root, { joints }) {
       state.arrived = -1;
       state.matched = false;
       if (plateIndex === 1) renderPlate();
+      if (lastS) syncCode(lastS);
     },
 
     /** 往事件流里写一行。kind 只影响左边那道细线的颜色。 */
@@ -424,7 +441,7 @@ export function createTopline(root) {
         play.val.textContent = playText;
         play.d.classList.toggle('warn', !!s.paused);
       }
-      const writeText = VIEW_STATE_LABEL[s.viewState] ?? s.viewState ?? '—';
+      const writeText = VIEW_STATE_SHORT[s.viewState] ?? s.viewState ?? '—';
       if (writeText !== last.write) {
         last.write = writeText;
         write.val.textContent = writeText;

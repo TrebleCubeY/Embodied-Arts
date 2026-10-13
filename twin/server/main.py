@@ -130,6 +130,7 @@ async def loop_frames(src, calib, sched, clock, cast, rec, hz, quiet):
                 title = "停顿"
                 ev = {"type": "action", "name": None, "title": title}
             cast.queue_event(ev)
+            cast.last_action_event = ev
             if not quiet:
                 print(f"  [{frame_t:7.2f}s] 轮到 {title}（{name or '—'}）")
 

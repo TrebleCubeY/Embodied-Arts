@@ -79,6 +79,9 @@ class Broadcaster:
         self.boot_id = f"{int(time.time())}-{os.getpid()}"
         self.on_keyframe = None
         self.last_client_left = None
+        # 最近一次动作事件。动作事件只在动作切换时才发，所以中途连上来的页面
+        # 得靠这一份补发，否则代码面板会空到下一次切换（最长一个动作的时长）。
+        self.last_action_event = None
         self._events = []
         self._server = None
 
@@ -112,6 +115,10 @@ class Broadcaster:
             ),
             only=conn,
         )
+        if self.last_action_event:
+            await self._send_text(
+                json.dumps(self.last_action_event, ensure_ascii=False), only=conn
+            )
         try:
             async for msg in conn:
                 # 上行只收文本控制消息；二进制一律忽略

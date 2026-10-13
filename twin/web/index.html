@@ -22,36 +22,51 @@
 </head>
 <body>
 
+<!-- 房间这一层：作品名 + 三个体的索引。索引里第一个是空的 —— 真机在房间里，不在屏上 -->
 <header id="masthead">
-  <div class="mast-left">
-    <ul class="bodies">
-      <li class="body off"><b>Ⅰ</b><span>实体</span><em>不在本屏</em></li>
-      <li class="body"><b>Ⅱ</b><span>数字层</span></li>
-      <li class="body"><b>Ⅲ</b><span>代码</span></li>
-    </ul>
-    <h1>
-      <span class="zh">一臂三身</span>
-      <span class="en">One Arm, Three Bodies</span>
-    </h1>
-  </div>
-  <div class="mast-gap" aria-hidden="true"></div>
-  <div id="topline" class="topline"></div>
+  <h1>
+    <span class="zh">一臂三身</span>
+    <span class="en">One Arm, Three Bodies</span>
+  </h1>
+  <ul class="bodies">
+    <li class="body off"><b>Ⅰ</b><span>实体</span><em>不在本屏</em></li>
+    <li class="body"><b>Ⅱ</b><span>数字层</span></li>
+    <li class="body"><b>Ⅲ</b><span>代码</span></li>
+  </ul>
 </header>
 
+<!-- 两块屏。中间隔开一段露出房间底色，各自带边框和标题条 -->
 <main id="spread">
-  <section id="stage">
-    <div id="viewport"></div>
-    <div class="crops" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-    <p id="hint">拖拽旋转 · 滚轮缩放 · 右键平移</p>
-    <div id="loading">
-      <span class="spinner" aria-hidden="true"></span>
-      <span class="msg">正在加载模型…</span>
+
+  <section id="screen-a" class="screen">
+    <header class="screen-head">
+      <span class="no">Ⅱ</span>
+      <span class="name">数字层</span>
+      <span class="en">Digital Layer</span>
+      <div id="modebar" class="modebar"></div>
+    </header>
+    <div class="screen-body">
+      <div id="viewport"></div>
+      <div class="crops" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <p id="hint">拖拽旋转 · 滚轮缩放 · 右键平移</p>
+      <div id="loading">
+        <span class="spinner" aria-hidden="true"></span>
+        <span class="msg">正在加载模型…</span>
+      </div>
     </div>
   </section>
 
-  <div id="rule" aria-hidden="true"></div>
+  <div id="seam" aria-hidden="true"></div>
 
-  <aside id="console" aria-label="代码层"></aside>
+  <aside id="screen-b" class="screen" aria-label="代码层">
+    <header class="screen-head">
+      <span class="no">Ⅲ</span>
+      <span class="name">代码</span>
+      <div id="topline" class="topline"></div>
+    </header>
+    <div id="console" class="screen-body"></div>
+  </aside>
+
 </main>
 
 <pre id="diag" hidden></pre>

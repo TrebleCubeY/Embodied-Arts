@@ -15,7 +15,7 @@ import { attachControls } from './controls.js';
 import { createJointPanel } from './joint-panel.js';
 import { createLink } from './net.js';
 import { createViewState, FOLLOW, VIEW_STATE_LABEL } from './view-state.js';
-import { createConsole, createTopline } from './console.js';
+import { createConsole, createTopline, createModeBar } from './console.js';
 import { installDebug } from './debug.js';
 
 const URDF_URL = './models/so101/so101_new_calib.urdf';
@@ -31,8 +31,10 @@ const viewport = document.getElementById('viewport');
 const loadingEl = document.getElementById('loading');
 const loadingMsg = loadingEl.querySelector('.msg');
 
-// 屏幕右半：模式 / 关节角 / 代码轮转 / 事件。手动控制也在它里面（最后一格抽屉）。
+// 两块屏：左边是数字层（模式读数在它的标题条上），右边是代码层
+// （关节角 / 代码轮转 / 事件，手动控制也在它里面，最后一格抽屉）。
 const consoleEl = document.getElementById('console');
+const modeBar = createModeBar(document.getElementById('modebar'));
 const topline = createTopline(document.getElementById('topline'));
 
 // WebGL 起不来时不要白屏：把原因写下来，自检脚本据此区分「环境问题」和「代码写错」
@@ -120,7 +122,7 @@ if (stage) {
 
       const joints = listJoints(r);
 
-      codeLayer = createConsole(consoleEl, { joints });
+      codeLayer = createConsole(consoleEl, { joints, modeBar });
       codeLayer.start();
       codeLayer.push('link', '页面就绪');
 

@@ -7,7 +7,7 @@
 // 与状态帧的分工见 view-state.js：面板管「谁写关节值」，暂停管「后端播不播」，两件正交的事。
 
 import { JOINT_HINT, RAD2DEG } from './frame.js';
-import { FOLLOW, VIEW_STATE_LABEL } from './view-state.js';
+import { FOLLOW, VIEW_STATE_SHORT } from './view-state.js';
 import { readJointAngle } from './robot.js';
 
 // 面板是给人看的，不必每帧刷。60Hz 写 DOM 纯属浪费。
@@ -21,12 +21,7 @@ const LINK_LABEL = {
   stopped: '已停止',
 };
 
-// 抽屉头那一行要短，长标签（"断流 · 冻结最后一帧"）会把这一行撑爆
-const SHORT_STATE = {
-  FOLLOW: '跟随',
-  OVERRIDE: '已接管',
-  FROZEN: '断流',
-};
+// 抽屉头那一行要短，短标签表在 view-state.js 里跟标题条共用一份
 
 function mkButton(text, onClick) {
   const b = document.createElement('button');
@@ -184,7 +179,7 @@ export function createJointPanel(container, joints, hooks = {}) {
     if (status.textContent !== text) status.textContent = text;
 
     // 抽屉收起来时也要知道谁在写关节值，所以头这一行常显
-    const stateText = SHORT_STATE[s.viewState] ?? VIEW_STATE_LABEL[s.viewState] ?? '';
+    const stateText = VIEW_STATE_SHORT[s.viewState] ?? s.viewState ?? '';
     if (headState.textContent !== stateText) headState.textContent = stateText;
 
     const p = !!s.paused;

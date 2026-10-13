@@ -1,19 +1,26 @@
 /* 数字层 · 屏幕版式
  *
- * 版式交代的是一件事：屏幕上有两个体，中间那道竖线是它们的接缝。
- * 左边是机械臂的像，右边是它的代码。整块屏平时是单色的 ——
- * 唯一带颜色的时候是数字层偏离了实机，那时候信号红出现。
- * 颜色因此不是装饰，是读数。
+ * 版式交代的是一件事：屏幕上并排放着两块屏。左边是机械臂的像，右边是它的代码。
+ * 两块各有自己的边框和标题条，中间隔开一段露出房间底色 —— 它们不是一个界面上的两栏，
+ * 是同一个东西的两种表述。
+ *
+ * 配色只有一条规则：平时整块屏是单色的，只有数字层偏离实机时出现信号红。
+ * 偏离时红出现在左边那块屏上，因为偏离就发生在它身上。颜色是读数，不是装饰。
  */
 
 :root {
   color-scheme: dark;
 
-  /* 表面。全部偏冷（B ≥ R），把唯一的暖色留给了信号红 */
-  --bg: #0b0d0f;
+  /* 房间：两块屏之间和四周露出来的底色，比两块屏都暗 */
+  --bg: #07080a;
+  /* 两块屏各自的底色与标题条。右屏比左屏亮一档，读起来才是两块不同的屏 */
   --stage: #0e1114;
-  --surface: #121517;
-  --surface-2: #171b1e;
+  --stage-head: #131a1f;
+  --surface: #14181b;
+  --surface-head: #1a2024;
+  --surface-2: #1c2126;
+  /* 屏幕外框。比底色亮，屏才立得起来 */
+  --bezel: #323a3f;
 
   /* 墨色。不是纯白，带一点暖，长时间看大屏不刺眼 */
   --ink: #eceae5;
@@ -21,8 +28,8 @@
   --ink-3: #8a9096;
   --ink-4: #5b6268;
 
-  --rule: #23282c;
-  --rule-2: #2f353a;
+  --rule: #242a2e;
+  --rule-2: #2f363b;
 
   /* 唯一强调色。和场景里的方块同源（0xb8342a），只在偏离时出现 */
   --signal: #b8342a;
@@ -46,6 +53,8 @@
 
   --col-console: clamp(360px, 32vw, 620px);
   --pad: clamp(12px, 1.1vw, 22px);
+  /* 两块屏之间的距离，也就是"房间"露出来的宽度 */
+  --gap: clamp(10px, 1.15vw, 24px);
 }
 
 * { box-sizing: border-box; }
@@ -71,33 +80,24 @@ body {
 
 :focus-visible { outline: 1px solid var(--ink-2); outline-offset: 2px; }
 
-/* ───────────────────────────────────────── 页头 */
+/* ───────────────────────────────────────── 房间这一层 */
 
-#masthead,
-#spread {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 1px var(--col-console);
-}
-
-#masthead { border-bottom: 1px solid var(--rule); }
-
-.mast-left {
+#masthead {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--pad);
   min-width: 0;
-  padding: calc(var(--u) * 0.85) var(--pad) calc(var(--u) * 0.7) var(--pad);
+  padding: calc(var(--gap) * 0.85) var(--gap) calc(var(--gap) * 0.5);
 }
 
-/* 作品名的拼音缩写不写，写三个体。第三个在屏上，第一个不在 */
+/* 三个体。第一个是空的：真机在房间里，不在屏上 */
 .bodies {
   display: flex;
   gap: calc(var(--u) * 1.15);
   margin: 0;
   padding: 0;
   list-style: none;
-  order: 2;
 }
 .bodies .body {
   display: flex;
@@ -146,17 +146,16 @@ body {
 .topline {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 0;
+  margin-left: auto;
   min-width: 0;
-  padding: calc(var(--u) * 0.85) var(--pad) calc(var(--u) * 0.7) 0;
 }
 .topline .tl {
   display: flex;
+  flex: 0 0 auto;
   align-items: baseline;
   gap: 0.45em;
-  padding: 0 calc(var(--u) * 0.75);
-  border-left: 1px solid var(--rule);
+  padding: 0 calc(var(--u) * 0.6);
+  border-left: 1px solid var(--rule-2);
   font-size: var(--t-sm);
   white-space: nowrap;
 }
@@ -189,14 +188,80 @@ body {
 }
 .dot.on { background: var(--ink-2); border-color: var(--ink-2); }
 
-/* ───────────────────────────────────────── 左：机械臂 */
+/* ───────────────────────────────────────── 两块屏 */
 
-#stage {
-  position: relative;
+#spread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--gap) var(--col-console);
+  min-height: 0;
+  padding: 0 var(--gap) var(--gap);
+}
+
+/* 只是间隔。不画任何东西 —— 空着才像两块分开的屏 */
+#seam { min-width: 0; }
+
+.screen {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  overflow: hidden;
+  min-height: 0;
+  border: 1px solid var(--bezel);
   background: var(--stage);
 }
+#screen-b { background: var(--surface); }
+
+/* 每块屏自己的标题条。左屏这条同时是模式读数出现的地方 */
+.screen-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: calc(var(--u) * 0.6);
+  min-width: 0;
+  height: calc(var(--u) * 2.75);
+  padding: 0 calc(var(--pad) * 0.8);
+  border-bottom: 1px solid var(--bezel);
+  background: var(--stage-head);
+  font-size: var(--t-xs);
+  letter-spacing: 0.16em;
+  color: var(--ink-3);
+}
+#screen-b .screen-head { background: var(--surface-head); }
+/* 标题条上除了英文副题之外都不许被压、不许换行 ——
+   挤到换行会让这一条变成两行，整块屏的顶边就歪了 */
+.screen-head .no,
+.screen-head .name { flex: 0 0 auto; white-space: nowrap; }
+.screen-head .no {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  color: var(--ink-4);
+}
+.screen-head .name { color: var(--ink-2); }
+.screen-head .en {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+
+.screen-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 偏离时整块左屏勾红：这件事发生在数字层身上，红就出现在它这块屏上 */
+.screen.deviating { border-color: var(--signal); }
+.screen.deviating .screen-head { border-bottom-color: var(--signal); }
+.screen.deviating .screen-head .no,
+.screen.deviating .screen-head .name { color: var(--signal-lit); }
+
+/* ───────────────────────────────────────── 左屏 · 数字层 */
+
 #viewport { position: absolute; inset: 0; }
 #viewport canvas { display: block; }
 
@@ -248,21 +313,7 @@ body {
 #loading.err .spinner { display: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* 两个体之间的接缝。上下各一道短刻线，像版画上的套准记号 */
-#rule { position: relative; background: var(--rule); }
-#rule::before,
-#rule::after {
-  content: "";
-  position: absolute;
-  left: -2px;
-  width: 5px;
-  height: 1px;
-  background: var(--rule-2);
-}
-#rule::before { top: calc(var(--u) * 0.9); }
-#rule::after { bottom: calc(var(--u) * 0.9); }
-
-/* ───────────────────────────────────────── 右：代码层 */
+/* ───────────────────────────────────────── 右屏 · 代码层 */
 
 #console {
   display: flex;
@@ -315,44 +366,43 @@ body {
 }
 .block .note.lit-note { min-height: 1.5em; }
 
-/* 模式 —— 全屏唯一的彩色区域 */
-
-.mode-row {
+/* 模式读数。它讲的是数字层的行为，所以长在左屏的标题条上，不放在代码那边 */
+.modebar {
   display: flex;
-  align-items: baseline;
-  gap: calc(var(--u) * 0.7);
+  align-items: center;
+  gap: calc(var(--u) * 0.65);
+  margin-left: auto;
 }
-.mode-word {
-  font-size: var(--t-xl);
+.modebar .mw {
+  font-size: var(--t-lg);
   font-weight: 600;
   letter-spacing: 0.1em;
-  line-height: 1.05;
+  color: var(--ink);
+  transition: color 120ms linear;
 }
-.mode-word.off { color: var(--signal-lit); }
-.chip {
+.modebar.off .mw { color: var(--signal-lit); }
+.modebar .chip {
   padding: 0.12em 0.5em;
   border: 1px solid currentColor;
   font-size: var(--t-xs);
   letter-spacing: 0.2em;
   color: var(--signal-lit);
 }
-.chip[hidden] { display: none; }
-
-.meter {
+.modebar .chip[hidden] { display: none; }
+.modebar .meter {
   position: relative;
+  width: calc(var(--u) * 6);
   height: 2px;
-  margin: calc(var(--u) * 0.75) 0 0;
   background: var(--rule);
 }
-.meter i {
+.modebar .meter i {
   display: block;
   width: 100%;
   height: 100%;
   background: var(--rule-2);
   transition: width 120ms linear;
 }
-.meter.run i { background: var(--ink-2); }
-.meter.off i { background: var(--signal); }
+.modebar.off .meter i { background: var(--signal); }
 
 /* 关节角 */
 
@@ -625,15 +675,16 @@ ol.trace {
 
 @media (max-width: 900px) {
   body { grid-template-rows: auto auto; overflow: auto; }
-  #masthead, #spread { grid-template-columns: minmax(0, 1fr); }
-  .mast-gap, #rule { display: none; }
-  .mast-left { flex-wrap: wrap; }
-  .bodies { order: 0; width: 100%; }
+  #masthead { flex-wrap: wrap; gap: calc(var(--u) * 0.6); }
   #masthead h1 .en { display: none; }
-  .topline { justify-content: flex-start; padding-left: var(--pad); flex-wrap: wrap; }
-  .topline .tl:first-child { padding-left: 0; }
-  #spread { grid-template-rows: 54vh auto; }
-  #console { border-top: 1px solid var(--rule); }
+  /* 竖着摆的时候两块屏还是两块屏，只是摞起来，中间的间隔照留 */
+  #spread {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 52vh var(--gap) auto;
+  }
+  #console { min-height: 40vh; }
+  .screen-head .en { display: none; }
+  .modebar .meter { width: calc(var(--u) * 4); }
   ol.trace { max-height: 32vh; }
 }
 
