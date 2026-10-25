@@ -132,6 +132,8 @@ if (stage) {
           onPause: () => link?.send({ type: 'pause' }),
           onResume: () => link?.send({ type: 'resume' }),
           onFollow: () => view.release('panel'),
+          // 回零位要回的是后端那份 NEUTRAL_DEG，前端不复制一份，免得两边飘
+          neutralDeg: () => link?.stats?.neutralDeg,
           onKeyframe: () => {
             const deg = status.appliedDeg.map((v) => Number(v.toFixed(2)));
             if (!link?.send({ type: 'keyframe', joints: deg })) {

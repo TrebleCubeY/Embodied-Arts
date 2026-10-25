@@ -14,6 +14,8 @@ export function createLink({ url, onFrame, onEvent, onState } = {}) {
     bootId: null,
     hz: null,
     frameSize: null,
+    // 后端给的静止姿态（度）。「回零位」按它摆，前端不自己写死一份
+    neutralDeg: null,
     framesReceived: 0,
     framesApplied: 0,
     framesDropped: 0,
@@ -118,6 +120,7 @@ export function createLink({ url, onFrame, onEvent, onState } = {}) {
       stats.hz = msg.hz;
       stats.frameSize = msg.frameSize;
       stats.paused = !!msg.paused;
+      stats.neutralDeg = Array.isArray(msg.neutralDeg) ? msg.neutralDeg : null;
     } else if (msg.type === 'state') {
       stats.paused = !!msg.paused;
     }

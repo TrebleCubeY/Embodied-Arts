@@ -29,6 +29,7 @@ python twin/server/main.py         # 起服务
 python twin/server/main.py --http-port 8080 --ws-port 8081   # 换端口
 python twin/server/main.py --no-record                       # 不写 JSONL 留档
 python twin/server/main.py --quiet                           # 不每 5 秒打一行进度
+python twin/server/main.py --source remote --remote-url ws://localhost:8765   # 接实机（桥进程见 ../robot/README.md）
 python twin/tools/serve.py                                   # 纯静态服务，页面停在零位
 python twin/server/library.py --check                        # 只校验三个动作文件，不起服务
 ```
@@ -57,7 +58,7 @@ server/               后端
   config.py           可调参数集中一处（端口、频率、动作顺序）
   protocol.py         状态帧打包/解包。与 web/src/frame.js 是一对，改一边必须改另一边
   library.py          动作库：加载、按时间采样、--check 校验
-  sources.py          数据源。MotionLibrarySource（当前）/ RealSerialSource（接实机时）
+  sources.py          数据源。MotionLibrarySource（默认）/ RemoteStateSource（连 WSL 里桥进程读实机）
   pipeline.py         播放时钟、零位标定、模式调度
   broadcast.py        状态帧广播、上行控制、JSONL 留档
   static.py           静态文件服务，tools/serve.py 与它共用这一份

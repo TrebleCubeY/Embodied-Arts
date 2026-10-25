@@ -136,10 +136,14 @@ export function createJointPanel(container, joints, hooks = {}) {
   });
   const followBtn = mkButton('回到跟随', () => hooks.onFollow?.());
   const keyBtn = mkButton('记录姿态', () => hooks.onKeyframe?.());
+  // 回零位 = 回到后端的 NEUTRAL_DEG（动作之间、每个动作首尾都停在那儿），不是"六个都 0"。
+  // 腕部自转的静止值是 -90°，硬写 0 会摆出一个既不是零位也不是任何动作姿态的姿势。
   const zeroBtn = mkButton('回零位', () => {
-    for (const w of widgets) {
-      w.joint.setJointValue(0);
-      w.show(0);
+    const neutral = hooks.neutralDeg?.();
+    for (let i = 0; i < widgets.length; i += 1) {
+      const rad = ((neutral?.[i] ?? 0) * Math.PI) / 180;
+      widgets[i].joint.setJointValue(rad);
+      widgets[i].show(rad);
     }
     hooks.onManual?.('__all__', 0);
   });

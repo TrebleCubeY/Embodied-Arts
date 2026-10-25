@@ -111,6 +111,8 @@ class Broadcaster:
                     "paused": self.paused,
                     "hz": config.BROADCAST_HZ,
                     "frameSize": protocol.FRAME_SIZE,
+                    # 「回零位」按这个摆。前端不复制一份，否则改了 config 两边就飘。
+                    "neutralDeg": config.NEUTRAL_DEG,
                 }
             ),
             only=conn,

@@ -28,12 +28,32 @@ import protocol  # noqa: E402
 import sources  # noqa: E402
 import static  # noqa: E402
 
+# 非动作库数据源在代码面板上的标题。动作库的标题由动作文件自己给。
+SOURCE_TITLES = {"real": "实机跟随"}
+
 
 def parse_args():
     ap = argparse.ArgumentParser(description="数字层后端：动作库 → 30Hz 状态帧 → 浏览器")
     ap.add_argument("--http-port", type=int, default=config.HTTP_PORT)
     ap.add_argument("--ws-port", type=int, default=config.WS_PORT)
     ap.add_argument("--hz", type=float, default=config.BROADCAST_HZ)
+    ap.add_argument(
+        "--source",
+        default=config.SOURCE,
+        choices=("motion-library", "remote", "real-serial"),
+        help="数据源：动作库（默认）/ 桥进程推来的实机读数 / 本进程直读串口（未实现）",
+    )
+    ap.add_argument(
+        "--remote-url",
+        default=config.REMOTE_URL,
+        help="--source=remote 时连哪个桥（WSL 里 robot/robot_bridge.py）",
+    )
+    ap.add_argument(
+        "--remote-wait",
+        type=float,
+        default=3.0,
+        help="--source=remote 时启动等第一帧的秒数，等不到也照常起",
+    )
     ap.add_argument("--no-record", action="store_true", help="不写 JSONL 留档")
     ap.add_argument("--skip-check", action="store_true", help="跳过动作库校验")
     ap.add_argument("--quiet", action="store_true", help="不每 5 秒打一行进度")
@@ -112,8 +132,10 @@ async def loop_frames(src, calib, sched, clock, cast, rec, hz, quiet):
         name, phase = src.describe(playhead)
         if name != last_action:
             last_action = name
-            if name:
-                act = src.lib.actions[name]
+            # 动作库的数据源才有关键帧可显示；remote（实机）没有 keyframes，
+            # 只发一条"在跟随实机"的事件，代码面板那块会显示成空，这是对的。
+            act = getattr(getattr(src, "lib", None), "actions", {}).get(name) if name else None
+            if act is not None:
                 title = act.title
                 ev = {
                     "type": "action",
@@ -126,6 +148,9 @@ async def loop_frames(src, calib, sched, clock, cast, rec, hz, quiet):
                     "total": round(act.total, 3),
                     "poses": act.poses,
                 }
+            elif name:
+                title = SOURCE_TITLES.get(name, name)
+                ev = {"type": "action", "name": name, "title": title}
             else:
                 title = "停顿"
                 ev = {"type": "action", "name": None, "title": title}
@@ -162,7 +187,12 @@ def main() -> int:
             return 1
 
     lib = library.load()
-    src = sources.MotionLibrarySource(lib)
+    src = sources.make(
+        args.source,
+        lib=lib,
+        url=args.remote_url,
+        wait_first=args.remote_wait,
+    )
     calib = pipeline.Calibrator()
     sched = pipeline.ModeScheduler()
     clock = pipeline.PlayClock()
@@ -176,9 +206,15 @@ def main() -> int:
     print(f"数字层后端  启动标识 {cast.boot_id}")
     print(f"  页面      http://{config.HOST}:{args.http_port}/")
     print(f"  状态帧    ws://{config.HOST}:{args.ws_port}/state   {args.hz:g}Hz / {protocol.FRAME_SIZE} 字节")
-    print(f"  数据源    {src.kind}（动作库当实机侧的替身）")
-    print(f"  播放列表  {' → '.join(config.PLAYLIST)}，动作之间停 {config.ACTION_GAP:g}s")
-    print(f"  动作循环  一圈 {lib.cycle:.2f}s")
+    if src.kind == "remote":
+        print(f"  数据源    remote ← {args.remote_url}（WSL 里的桥进程，只读实机）")
+        print("  零位偏移  由桥进程负责（robot/offsets.json），这里不再加一遍")
+    elif src.kind == "motion-library":
+        print(f"  数据源    motion-library（动作库当实机侧的替身）")
+        print(f"  播放列表  {' → '.join(config.PLAYLIST)}，动作之间停 {config.ACTION_GAP:g}s")
+        print(f"  动作循环  一圈 {lib.cycle:.2f}s")
+    else:
+        print(f"  数据源    {src.kind}")
     print(f"  留档      {rec.path if rec.path else '未开'}")
     print("  校验      动作库通过；Ctrl+C 结束\n")
 
@@ -195,6 +231,9 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n已停止")
     finally:
+        close = getattr(src, "close", None)
+        if close:
+            close()
         httpd.shutdown()
     return 0
 

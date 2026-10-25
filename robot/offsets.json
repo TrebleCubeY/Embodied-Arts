@@ -1,0 +1,12 @@
+{
+  "note": "2026-10-24 16:41 实机实测（--capture-zero）。参考姿态是数字层的静止姿态（腕部 -90，对应实机读数 0）。其余四个 offset 只有 ±7°，是手工摆姿态的正常误差。",
+  "reference": [0.0, 0.0, 0.0, 0.0, -90.0, 0.0],
+  "offsets": {
+    "shoulder_pan": 4.527,
+    "shoulder_lift": -5.319,
+    "elbow_flex": 1.495,
+    "wrist_flex": -7.165,
+    "wrist_roll": -87.407,
+    "gripper": 0.0
+  }
+}

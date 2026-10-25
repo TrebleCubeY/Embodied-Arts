@@ -28,6 +28,15 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+# 工具链的缓存目录（跑 selftest / 格式化时会出现）
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# ---- 日志 ----
+# 桥进程与后端平时重定向到 .tmp/，这条防手滑写到仓库根
+*.log
 
 
 # ---- 编辑器与系统 ----
