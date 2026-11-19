@@ -8,3 +8,8 @@
 *.jpg binary
 *.pdf binary
 *.stl binary
+
+# Windows 脚本必须 CRLF：cmd.exe 对 LF 结尾的批处理解析不可靠（标签、goto 尤其），
+# PowerShell 也习惯 CRLF。仓库里仍按 LF 存，checkout 到 Windows 时自动转回去。
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

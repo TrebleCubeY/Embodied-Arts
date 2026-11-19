@@ -107,9 +107,18 @@ export const RED_BLOCK = {
 export function addRedBlock(scene, { edge = RED_BLOCK.edge, position = RED_BLOCK.position } = {}) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(edge, edge, edge),
-    new THREE.MeshStandardMaterial({ color: 0xb8342a, roughness: 0.62, metalness: 0 }),
+    // 一开始就透明且不可见：方块不常驻场景，只有真的夹起来的那一下才淡入出现。
+    // 这里必须 transparent:true，否则 opacity 会被忽略（Material 的透明通道要显式打开）。
+    new THREE.MeshStandardMaterial({
+      color: 0xb8342a,
+      roughness: 0.62,
+      metalness: 0,
+      transparent: true,
+      opacity: 0,
+    }),
   );
   mesh.position.set(position[0], position[1], position[2]);
+  mesh.visible = false;
   scene.add(mesh);
   return mesh;
 }

@@ -9,6 +9,8 @@
   real-serial     本进程独占串口直接读（未实现，留给"机械臂接本机"那种形式）
 """
 
+import json
+import queue
 import threading
 import time
 
@@ -46,6 +48,10 @@ class RemoteStateSource:
       - 断流（连接断了）不换值，sample 返回最后一帧 —— 数字层冻住，不跳零
       - 重连退避 0.5→1→2→5 秒，一直试，不退出
       - 桥进程没起来也能启动后端：先出零位并打一行警告，等桥起来自动接上
+
+    **上行也走这条连接**：`send_control()` 把控制消息塞进队列，由收帧线程在两次
+    recv 之间发出去（只有一个线程碰 socket，不需要额外加锁）。桥上收到的
+    `{"type":"drive"}` / `{"type":"play"}` 就是从这里来的。
     """
 
     kind = "remote"
@@ -58,6 +64,13 @@ class RemoteStateSource:
         self._frames = 0
         self._error = None
         self._stop = threading.Event()
+        self._outbox = queue.Queue()
+        self._up = False  # 连接是否活着（send_control 靠它快速失败）
+        self._sent = 0
+        # 桥上来的文本事件（hello / drive）。由 main.py 挂上去转给页面。
+        self.on_event = None
+        # 建连时桥发的那条 hello（当时 on_event 还没挂，留一份给 replay）
+        self.last_hello = None
 
         self._thread = threading.Thread(target=self._run, name="remote-state", daemon=True)
         self._thread.start()
@@ -71,11 +84,18 @@ class RemoteStateSource:
             try:
                 with self._connect() as conn:
                     self._error = None
+                    self._up = True
                     backoff = 0.5
                     while not self._stop.is_set():
-                        msg = conn.recv()
+                        self._flush_outbox(conn)
+                        try:
+                            # 带超时，好让发送队列有机会被处理（30Hz 下最多等 50ms）
+                            msg = conn.recv(timeout=0.05)
+                        except TimeoutError:
+                            continue
                         if isinstance(msg, str):
-                            continue  # hello 之类的文本事件，桥那边发的，用不上
+                            self._handle_text(msg)
+                            continue
                         frame = protocol.unpack_frame(msg)
                         with self._lock:
                             self._actual = list(frame["actual"])
@@ -85,6 +105,37 @@ class RemoteStateSource:
                 self._error = repr(exc)
                 self._stop.wait(backoff)
                 backoff = min(backoff * 2.0, 5.0)
+            finally:
+                self._up = False
+
+    def _flush_outbox(self, conn):
+        while True:
+            try:
+                obj = self._outbox.get_nowait()
+            except queue.Empty:
+                return
+            conn.send(json.dumps(obj, ensure_ascii=False))
+            self._sent += 1
+
+    def _handle_text(self, text: str):
+        """桥发的 hello / drive 事件。原样交给后端，由它决定怎么转给页面。"""
+        try:
+            msg = json.loads(text)
+        except ValueError:
+            return
+        if not isinstance(msg, dict):
+            return
+        # 连接是在构造对象时就建立的，那时候 main.py 还没挂上 on_event，
+        # 所以 hello 要留一份 —— 否则页面第一个 hello 里 drive 是空的。
+        if msg.get("type") == "hello":
+            self.last_hello = msg
+        if self.on_event is not None:
+            self.on_event(msg)
+
+    def replay(self):
+        """把错过的那条 hello 补喂一次。main.py 挂完 on_event 之后调用。"""
+        if self.last_hello is not None and self.on_event is not None:
+            self.on_event(self.last_hello)
 
     def _connect(self):
         """连桥进程。**必须绕开 HTTP 代理**：websockets 默认读 http_proxy / https_proxy
@@ -97,6 +148,17 @@ class RemoteStateSource:
         except TypeError:
             return connect(self.url, **opts)
 
+    # ------------------------------------------------------------ 上行
+
+    def send_control(self, obj: dict) -> bool:
+        """把控制消息排进队列。没连上就返回 False（页面那边会显示"桥未确认"）。"""
+        if not self._up:
+            return False
+        self._outbox.put(obj)
+        return True
+
+    # ------------------------------------------------------------ 接口
+
     def _wait_first(self, timeout: float):
         """等第一帧。等不到不算失败 —— 先按零位出图，桥起来之后自然跟上。"""
         deadline = time.monotonic() + max(0.0, timeout)
@@ -106,8 +168,6 @@ class RemoteStateSource:
                     return
             time.sleep(0.02)
         print(f"  [!] {timeout:g}s 内没收到 {self.url} 的帧，先按零位出图（桥起来后自动跟上）")
-
-    # ------------------------------------------------------------ 接口
 
     def sample(self, t: float) -> list:
         with self._lock:

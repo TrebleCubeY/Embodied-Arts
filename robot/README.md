@@ -17,13 +17,13 @@ wsl -d Ubuntu --cd ~/lerobot
 3. **attach** —— 用管理员权限启动 PowerShell，四个设备一次挂上
 
 ```powershell
-'4-4','4-3','1-1','1-2' | ForEach-Object { usbipd attach --wsl --busid $_ }
+'4-2','4-3','4-4' | ForEach-Object { usbipd attach --wsl --busid $_ }
 ```
 
 逐个挂也是这四条：
 
 ```powershell
-usbipd attach --wsl --busid 4-4     # 依次 4-4 / 4-3 / 1-1 / 1-2
+usbipd attach --wsl --busid 2-3
 ```
 
 busid 以 `usbipd list` 的 `Connected` 段为准（口固定的话每次都是这几个）；插拔后万一变了就改上面那行。
@@ -52,7 +52,12 @@ taskkill //F //PID <PID>
 ```
 
 3. 确认 `:8765` 也没了（`netstat -ano | grep 8765`），再拔线
-4. 可选：`wsl --shutdown` 把 WSL 整个收掉（重开时第 3 步照做）
+
+```powershell
+fuser -k 8765/tcp
+```
+
+3. 可选：`wsl --shutdown` 把 WSL 整个收掉（重开时第 3 步照做）
 
 先停桥再拔线：串口是被正常关闭的，日志干净。反过来先拔线也不会崩（桥冻结在最后一帧、只刷失败），但没必要。
 
@@ -70,8 +75,8 @@ python /mnt/d/CUHKSZ/AIE3001/Project/robot/robot_bridge.py --port /dev/ttyACM1 -
 **② 遥操 + 屏幕跟随（推荐给演示）** —— 桥自己读 leader、写给 follower
 
 ```bash
-python /mnt/d/CUHKSZ/AIE3001/Project/robot/robot_bridge.py --port /dev/ttyACM1 --id zyf_follower \
-  --teleop --leader-port /dev/ttyACM0 --leader-id zyf_leader
+python /mnt/d/CUHKSZ/AIE3001/Project/robot/robot_bridge.py --port /dev/ttyACM0 --id zyf_follower \
+  --teleop --leader-port /dev/ttyACM1 --leader-id zyf_leader
 ```
 
 **③ 官方 teleoperate / 录数据（要停桥，分时）**
@@ -82,6 +87,37 @@ lerobot-teleoperate \
   --robot.type=so101_follower --robot.port=/dev/ttyACM1 --robot.id=zyf_follower \
   --teleop.type=so101_leader --teleop.port=/dev/ttyACM0 --teleop.id=zyf_leader
 ```
+
+**④ 推理时也要屏幕跟随** —— 用 `rollout_bridge.py` 把 `lerobot-rollout` 包起来
+
+```bash
+python /mnt/d/CUHKSZ/AIE3001/Project/robot/rollout_bridge.py \
+  --strategy.type=base \
+  --policy.path=TrebleY/act_pickplace_v2 --policy.device=cuda \
+  --robot.type=so101_follower --robot.port=/dev/ttyACM0 --robot.id=zyf_follower \
+  --robot.cameras='{"overhead":{"type":"opencv","index_or_path":0,"fps":30,"width":640,"height":480,"fourcc":"MJPG"},"wrist":{"type":"opencv","index_or_path":2,"fps":30,"width":640,"height":480,"fourcc":"MJPG"}}' \
+  --task="pick and place" --duration=10
+```
+
+就是把 `lerobot-rollout` 这个命令名换成 `rollout_bridge.py`，**参数一字不动**。
+
+为什么必须这样：`lerobot-rollout` 独占 follower 串口，串口又是点对点的，没法旁听，所以桥只能
+**在同一个进程里**取数——它给 `SO101Follower.get_observation` 挂了个钩子，读到观测就顺手转成
+68 字节帧推出去。推理逻辑一行没改，钩子失败也不会影响推理。
+
+本脚本自己的参数（写在前面，不与 rollout 的冲突）：`--ws-port`（默认 8765）、`--push-hz`（30）、
+`--offsets`（默认 `robot/offsets.json`）、`--repeat N`（连续跑几轮）、`--repeat-gap`（轮间停几秒）、`--quiet`。
+同时别开 ① —— 抢同一个串口和同一个 8765。
+
+注意 `--duration=10` 是**十秒**，不是十次。要反复演示用这两个：
+
+```bash
+--repeat 10 --duration=10     # 跑 10 轮，每轮 10 秒
+--duration=0                  # 一直跑，不停
+```
+
+`--robot.cameras` 必须是合法 JSON，别把示例里的占位符直接跑 —— 写错脚本会先拦下来并给正确样例
+（lerobot 自己的报错只会说 `robot: ... got None`，指不到是哪一项）。
 
 ## 后端两种起法（Windows）
 

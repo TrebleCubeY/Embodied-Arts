@@ -121,6 +121,9 @@ export function createLink({ url, onFrame, onEvent, onState } = {}) {
       stats.frameSize = msg.frameSize;
       stats.paused = !!msg.paused;
       stats.neutralDeg = Array.isArray(msg.neutralDeg) ? msg.neutralDeg : null;
+      // 后连上来的窗口靠这两个字段对齐：当前驱动档、谁在写关节值
+      stats.drive = msg.drive ?? null;
+      stats.override = !!msg.override;
     } else if (msg.type === 'state') {
       stats.paused = !!msg.paused;
     }

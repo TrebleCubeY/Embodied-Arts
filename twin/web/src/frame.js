@@ -41,6 +41,31 @@ export const MODE = { FOLLOW: 0, MIRROR: 1, IDLE: 2 };
 export const MODE_NAMES = ['跟随', '反向', '无关运动'];
 export const BLEND_DONE = 255;
 
+// 六个关节的限位（度），与 twin/server/config.py 的 JOINT_LIMITS_DEG 一一对应。
+// code 视图不加载 URDF（也就不建 3D），拿不到 urdf-loader 解析出来的限位，
+// 所以这里得有一份 —— 改 config.py 时同步改这里。
+export const JOINT_LIMITS_DEG = {
+  shoulder_pan: [-110.0, 110.0],
+  shoulder_lift: [-100.0, 100.0],
+  elbow_flex: [-96.8, 96.8],
+  wrist_flex: [-95.0, 95.0],
+  wrist_roll: [-157.2, 162.8],
+  gripper: [-10.0, 100.0],
+};
+
+/** 驱动档。三档与桥那边的字符串一致，别改。 */
+export const DRIVE_MODES = ['teleop', 'keyframes', 'hold'];
+export const DRIVE_LABELS = {
+  teleop: '遥操跟随',
+  keyframes: '自动 · 预设',
+  hold: '停住',
+};
+export const DRIVE_HINT = {
+  teleop: '人握着 leader，follower 跟着动，屏幕跟着 follower',
+  keyframes: '桥按 twin/server/motions 里的关键帧回放',
+  hold: '不写指令，舵机自己保持当前姿态',
+};
+
 export const DEG2RAD = Math.PI / 180;
 export const RAD2DEG = 180 / Math.PI;
 

@@ -470,14 +470,61 @@ body {
   background: var(--ink);
 }
 
+/* 驱动档：代码层最上面那一格。三个按钮是唯一能让观众看见「谁在动」的开关。
+   选中态用墨色，不用信号红 —— 红只留给「数字层偏离实机」。 */
+
+#console .block.drive { padding-bottom: calc(var(--u) * 0.7); }
+.drivebar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(var(--u) * 0.4);
+}
+.dbtn {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.45em;
+  padding: calc(var(--u) * 0.5) calc(var(--u) * 0.4);
+  border: 1px solid var(--bezel);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-family: var(--font-sans);
+  font-size: var(--t-sm);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.dbtn b {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: var(--t-xs);
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.dbtn:hover { color: var(--ink); border-color: var(--ink-4); }
+.dbtn.on {
+  border-color: var(--ink-2);
+  background: var(--surface-head);
+  color: var(--ink);
+}
+.dbtn.on b { color: var(--ink-2); }
+.drive-state {
+  margin: calc(var(--u) * 0.45) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+#console .block.drive.paused .drive-state { color: var(--ink); }
+
 /* 代码轮转 */
 
 .tabs {
   display: flex;
   gap: calc(var(--u) * 0.75);
   margin-bottom: calc(var(--u) * 0.4);
-}
-.tab {
+}.tab {
   padding: 0.15em 0;
   border: 0;
   border-bottom: 1px solid transparent;
@@ -691,3 +738,35 @@ ol.trace {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ───────────────────────────────────────── 单屏视图（一块屏一个窗口）
+
+   演示时两块外接屏各开一个窗口：?view=twin 与 ?view=code。整页只剩一块屏，
+   原来按整页视口宽算的字号会明显偏小（三米外读不到），所以这里单独标一档。 */
+
+body[data-view="twin"],
+body[data-view="code"] {
+  --u: clamp(15px, 0.95vw + 6px, 26px);
+  --pad: clamp(18px, 1.6vw, 34px);
+  --gap: clamp(14px, 1.6vw, 30px);
+}
+
+body[data-view="twin"] #spread,
+body[data-view="code"] #spread {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0 var(--gap) var(--gap);
+}
+
+/* 另一块屏不参与布局，也不该占着一个空格子 */
+body[data-view="twin"] #screen-b,
+body[data-view="code"] #screen-a,
+body[data-view="twin"] #seam,
+body[data-view="code"] #seam { display: none; }
+
+/* 作品名只在数字层那块屏上出现一次；代码屏从标题条开始 */
+body[data-view="code"] #masthead { display: none; }
+body[data-view="code"] .screen-head .en { display: none; }
+/* 标题没了，body 的 grid 就只剩一块屏 —— 但行模板还写着两行（auto + 1fr），
+   auto 那一行会被 #spread 的内容撑起来、下面空一格。所以这里改成单行。 */
+body[data-view="code"] { grid-template-rows: minmax(0, 1fr); }
+

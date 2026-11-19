@@ -8,7 +8,14 @@
 // 高亮规则（代码面板）只依赖真实信号：暂停、模式、目标与实际的差、视图状态。
 // 规则写在 litKeyFor() 里，一眼能看完，加状态时一起改。
 
-import { JOINT_HINT, MODE_NAMES } from './frame.js';
+import {
+  JOINT_HINT,
+  MODE_NAMES,
+  RAD2DEG,
+  DRIVE_MODES,
+  DRIVE_LABELS,
+  DRIVE_HINT,
+} from './frame.js';
 import { OVERRIDE, FROZEN, VIEW_STATE_SHORT } from './view-state.js';
 import { showPanel } from './stage.js';
 import { PLATES, motionLines } from './code-plates.js';
@@ -106,8 +113,29 @@ export function createModeBar(root) {
   };
 }
 
-export function createConsole(root, { joints, modeBar }) {
+export function createConsole(root, { joints, modeBar, onDrive }) {
   root.replaceChildren();
+
+  // ────────────────────────────────────────────── 驱动档
+  // 放最上面：演示时最先动的就是它。观众看到的每一行读数都取决于这一档。
+  const driveBlock = el('section', 'block drive');
+  {
+    const h = el('h2', 'block-head');
+    h.append(el('span', 'lead', '驱动'), el('em', null, '键 1 · 2 · 3'));
+    driveBlock.append(h);
+  }
+  const driveBar = el('div', 'drivebar');
+  const driveBtns = DRIVE_MODES.map((mode, i) => {
+    const b = el('button', 'dbtn');
+    b.type = 'button';
+    b.append(el('b', null, String(i + 1)), el('span', null, DRIVE_LABELS[mode]));
+    b.title = DRIVE_HINT[mode] ?? '';
+    b.addEventListener('click', () => onDrive?.(mode));
+    driveBar.append(b);
+    return b;
+  });
+  const driveState = el('p', 'drive-state', '等桥上报档位…');
+  driveBlock.append(driveBar, driveState);
 
   // ────────────────────────────────────────────── 关节角
   const jointBlock = el('section', 'block');
@@ -122,6 +150,10 @@ export function createConsole(root, { joints, modeBar }) {
   jointBlock.append(head);
 
   const rows = joints.map(({ name, lower, upper }) => {
+    // listJoints 给的是 URDF 的弧度，这里的读数全是度 —— 先换过来再比，
+    // 否则行程尺永远贴在两端（这个换算以前是缺的）。
+    const lo = lower * RAD2DEG;
+    const hi = upper * RAD2DEG;
     const row = el('div', 'jrow');
     const nameEl = el('span', 'jname', JOINT_HINT[name] ?? name);
     nameEl.title = name;
@@ -136,14 +168,14 @@ export function createConsole(root, { joints, modeBar }) {
     jointBlock.append(row);
     const r = {
       name,
-      lower,
-      upper,
+      lower: lo,
+      upper: hi,
       tgt,
       act,
       tgtNum,
       actNum,
       last: ['', ''],
-      zeroAt: ((0 - lower) / (upper - lower)) * 100,
+      zeroAt: ((0 - lo) / (hi - lo)) * 100,
     };
     zero.style.left = `${r.zeroAt}%`;
     return r;
@@ -187,7 +219,7 @@ export function createConsole(root, { joints, modeBar }) {
   const traceList = el('ol', 'trace');
   traceBlock.append(traceList);
 
-  root.append(jointBlock, codeBlock, traceBlock);
+  root.append(driveBlock, jointBlock, codeBlock, traceBlock);
 
   // 手动控制放最后：它是给操作者用的，观众不需要，默认收起来。
   // ?panel=0 时整块不建 —— 自检脚本靠 #panel button 找按钮，所以这个 id 不能改。
@@ -316,6 +348,8 @@ export function createConsole(root, { joints, modeBar }) {
   }
 
   let lastSync = 0;
+  // 驱动档的显示去重：档位与那行状态各记一份，避免每 100ms 写一次 DOM
+  const lastDrive = { mode: null, text: '' };
   // 最近一次状态快照。动作事件到达时用它立刻刷一次高亮与说明，
   // 否则新动作的关键帧已经列出来了、下面那行说明还停在上一个动作（要等下一个节流刻度）。
   let lastS = null;
@@ -331,6 +365,21 @@ export function createConsole(root, { joints, modeBar }) {
       const now = performance.now();
       if (now - lastSync < SYNC_INTERVAL_MS) return;
       lastSync = now;
+
+      // —— 驱动档（按钮高亮 + 一行状态）
+      const dm = s.drive?.mode ?? null;
+      const dtext = dm
+        ? `${DRIVE_LABELS[dm] ?? dm}${s.drive?.paused ? ' · 预设已暂停' : ''}`
+        : '等桥上报档位…';
+      if (dm !== lastDrive.mode) {
+        lastDrive.mode = dm;
+        driveBtns.forEach((b, i) => b.classList.toggle('on', DRIVE_MODES[i] === dm));
+      }
+      if (dtext !== lastDrive.text) {
+        lastDrive.text = dtext;
+        driveState.textContent = dtext;
+        driveBlock.classList.toggle('paused', !!s.drive?.paused);
+      }
 
       // —— 模式（在左屏的标题条上）
       modeBar?.sync(s);

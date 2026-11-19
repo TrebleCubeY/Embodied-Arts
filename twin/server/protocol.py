@@ -31,8 +31,11 @@ _FRAME = struct.Struct("<dI6f6fBB2xf")
 
 assert _FRAME.size == FRAME_SIZE, f"状态帧布局变了：算出 {_FRAME.size}，应为 {FRAME_SIZE}"
 
-# 前端上行的控制消息类型。别的一律忽略
-CONTROL_TYPES = ("hello", "pause", "resume", "keyframe")
+# 前端上行的控制消息类型。别的一律忽略。
+# drive / play 是"换驱动档"与"暂停预设动作"，会一路转到 WSL 里的桥；
+# override 只说"谁在写关节值"，不出后端；control-only 用于只要控制不要状态帧的客户端
+# （USB 小键盘那个常驻进程，省掉 30Hz 的无用流量）。
+CONTROL_TYPES = ("hello", "pause", "resume", "keyframe", "drive", "play", "override", "control-only")
 
 
 def pack_frame(*, t, seq, actual, target, mode, blend, grip) -> bytes:

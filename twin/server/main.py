@@ -32,6 +32,27 @@ import static  # noqa: E402
 SOURCE_TITLES = {"real": "实机跟随"}
 
 
+def make_action_event(name, lib):
+    """动作事件：带真实关键帧，给代码层显示。
+
+    poses 一定从本地那份动作库取（和桥读的是同一批 JSON），所以桥只需要报动作名。
+    """
+    act = lib.actions.get(name) if (lib is not None and name) else None
+    if act is not None:
+        return {
+            "type": "action",
+            "name": name,
+            "title": act.title,
+            # 面板要是自己编一份关键帧，代码层就不再是观众对齐现实的锚点
+            "path": f"twin/server/motions/{act.path.name}",
+            "total": round(act.total, 3),
+            "poses": act.poses,
+        }
+    if name:
+        return {"type": "action", "name": name, "title": SOURCE_TITLES.get(name, name)}
+    return {"type": "action", "name": None, "title": "停顿"}
+
+
 def parse_args():
     ap = argparse.ArgumentParser(description="数字层后端：动作库 → 30Hz 状态帧 → 浏览器")
     ap.add_argument("--http-port", type=int, default=config.HTTP_PORT)
@@ -132,32 +153,14 @@ async def loop_frames(src, calib, sched, clock, cast, rec, hz, quiet):
         name, phase = src.describe(playhead)
         if name != last_action:
             last_action = name
-            # 动作库的数据源才有关键帧可显示；remote（实机）没有 keyframes，
-            # 只发一条"在跟随实机"的事件，代码面板那块会显示成空，这是对的。
-            act = getattr(getattr(src, "lib", None), "actions", {}).get(name) if name else None
-            if act is not None:
-                title = act.title
-                ev = {
-                    "type": "action",
-                    "name": name,
-                    "title": title,
-                    # 带上这个动作的真实关键帧。屏幕右半的代码面板直接显示这份数据 ——
-                    # 面板要是自己编一份，代码层就不再是观众对齐现实的锚点。
-                    # 只往事件里加字段，68 字节状态帧一个字节不动。
-                    "path": f"twin/server/motions/{act.path.name}",
-                    "total": round(act.total, 3),
-                    "poses": act.poses,
-                }
-            elif name:
-                title = SOURCE_TITLES.get(name, name)
-                ev = {"type": "action", "name": name, "title": title}
-            else:
-                title = "停顿"
-                ev = {"type": "action", "name": None, "title": title}
-            cast.queue_event(ev)
-            cast.last_action_event = ev
-            if not quiet:
-                print(f"  [{frame_t:7.2f}s] 轮到 {title}（{name or '—'}）")
+            # remote（实机）链路上"在演哪个预设动作"只有桥知道，由桥报 action 事件；
+            # 这里不猜，否则会把"跟随实机"当成一个动作发出去，数字层的红块也就没有依据。
+            if getattr(src, "kind", "") != "remote":
+                ev = make_action_event(name, getattr(src, "lib", None))
+                cast.queue_event(ev)
+                cast.last_action_event = ev
+                if not quiet:
+                    print(f"  [{frame_t:7.2f}s] 轮到 {ev['title']}（{name or '—'}）")
 
         if not quiet and now - last_log >= 5.0:
             print(
@@ -199,6 +202,56 @@ def main() -> int:
     rec = broadcast.Recorder(enabled=not args.no_record)
     cast = broadcast.Broadcaster(clock, rec, port=args.ws_port)
     cast.on_keyframe = make_keyframe_recorder()
+
+    def forward_control(msg: dict):
+        """页面上的换档 / 暂停，转到 WSL 里的桥。
+
+        只有 remote 源才有桥可转。动作库模式下换档没有意义（臂根本不在这条链路上），
+        暂停仍然冻结本地播放时钟，那是既有行为。
+        """
+        kind = msg.get("type")
+        if getattr(src, "kind", "") != "remote":
+            if kind == "drive":
+                print("  [!] 当前是动作库数据源（没有桥），换档不会影响实臂")
+            return
+        if kind == "drive":
+            payload = {"type": "drive", "mode": msg.get("mode")}
+        elif kind == "pause":
+            payload = {"type": "play", "paused": True}
+        elif kind == "resume":
+            payload = {"type": "play", "paused": False}
+        else:
+            return
+        if not src.send_control(payload):
+            print(f"  [!] 桥没连上，这条 {kind} 没发出去（页面会显示未确认）")
+
+    cast.on_control = forward_control
+
+    def on_source_event(msg: dict):
+        """桥推上来的文本：hello（带当前档位）、drive（换档）、action（在演哪个动作）。"""
+        kind = msg.get("type")
+        if kind == "drive":
+            cast.set_drive(msg)
+        elif kind == "action":
+            ev = make_action_event(msg.get("name"), lib)
+            cast.queue_event(ev)
+            cast.last_action_event = ev
+        elif kind == "hello":
+            drive = msg.get("drive")
+            if isinstance(drive, dict):
+                cast.set_drive(drive)
+            # 桥连上/重连时补报当前动作，否则页面要等到下一次动作切换才知道
+            act_name = msg.get("action")
+            if act_name:
+                ev = make_action_event(act_name, lib)
+                cast.queue_event(ev)
+                cast.last_action_event = ev
+
+    if hasattr(src, "on_event"):
+        src.on_event = on_source_event
+        # 桥在连上的那一刻就发了 hello，那时回调还没挂上，这里补喂一次
+        if hasattr(src, "replay"):
+            src.replay()
 
     httpd = static.make_server(config.HOST, args.http_port, config.WEB_DIR)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
