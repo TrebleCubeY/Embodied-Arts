@@ -118,31 +118,68 @@ export function countMeshes(root) {
   return n;
 }
 
-// 机身颜色。URDF 里只有两个材质：
-//   3d_printed = rgba 1.0 0.82 0.12（黄）—— 3D 打印件，这里改成白色
-//   sts3215    = rgba 0.1 0.1 0.1（黑灰）—— 舵机，保持不动
+// 机身配色：**黑的主体 + 白的夹爪**，和桌上那台实物一致。
 //
-// 判据同时看材质名和当前颜色：只认名字的话，换 URDF 或哪天改了名字就会静默失效；
-// 只看颜色的话，别的偏暖色的件会被误伤。
+// URDF 里只有两个材质：
+//   3d_printed = rgba 1.0 0.82 0.12（黄）—— 3D 打印件
+//   sts3215    = rgba 0.1 0.1 0.1（黑灰）—— 舵机
+// 光靠这两个材质名分不出"主体"和"夹爪"，所以按 link 名再切一刀：
+//   gripper_link / moving_jaw_so101_v1_link 上的打印件 = 白（颚片）
+//   其余打印件 = 磨砂黑（臂体）
+//   舵机始终是深色（实物就是黑色塑料壳）
 //
-// 数值写在线性空间里（urdf-loader 是用 setRGB 直接写进去的，没做 sRGB 转换），
-// 所以 0.85 显示出来比十六进制里的 0.85 更亮。嫌过曝就往下调一点。
-const PRINTED_WHITE = new THREE.Color().setRGB(0.72, 0.72, 0.715);
-const isPrintedPart = (m) =>
-  m.name === '3d_printed' || Boolean(m.color && m.color.r > 0.5 && m.color.b < 0.5);
+// 材质统一换成 MeshStandardMaterial：Phong 没有 roughness/metalness，
+// 做不出"磨砂黑在纸背景上的那一点高光"，黑色会糊成一片。
+const BODY_COLOR = new THREE.Color('#1a1b1f');
+const SERVO_COLOR = new THREE.Color('#0d0e10');
+const JAW_COLOR = new THREE.Color('#f3f0e9');
 
-/** STL 的三角面绕向不一定一致，双面渲染最省事，也避免背面出现黑洞。
- *  顺手把 3D 打印件从黄色改成白色（舵机不动）。 */
+/** 往上找最近的 URDF link 名。夹爪判定靠它，不靠网格文件名 */
+function linkNameOf(obj) {
+  let p = obj;
+  while (p) {
+    if (p.isURDFLink) return p.name || '';
+    p = p.parent;
+  }
+  return '';
+}
+
+const isJawLink = (name) => /^(gripper|moving_jaw)/i.test(name);
+
+/** 三个共享材质，全模型最多三份，减少 draw call 与状态切换 */
+function makePalette() {
+  const mk = (kind, color, roughness, metalness) =>
+    new THREE.MeshStandardMaterial({
+      name: `twin-${kind}`,
+      color,
+      roughness,
+      metalness,
+      side: THREE.DoubleSide,
+    });
+  return {
+    body: mk('body', BODY_COLOR, 0.54, 0.16),
+    servo: mk('servo', SERVO_COLOR, 0.36, 0.46),
+    jaw: mk('jaw', JAW_COLOR, 0.66, 0.02),
+  };
+}
+
 export function tuneMaterials(robot) {
+  const palette = makePalette();
   robot.traverse((o) => {
     if (!o.isMesh) return;
+    const jaw = isJawLink(linkNameOf(o));
     const mats = Array.isArray(o.material) ? o.material : [o.material];
-    for (const m of mats) {
-      if (!m) continue;
-      m.side = THREE.DoubleSide;
-      if (isPrintedPart(m)) m.color.copy(PRINTED_WHITE);
-      m.needsUpdate = true;
-    }
+    // 舵机永远深色：夹爪里那颗小电机变白会显得很假
+    const picked = mats.map((m) => {
+      if (!m) return m;
+      if (m.name === 'sts3215') return palette.servo;
+      return jaw ? palette.jaw : palette.body;
+    });
+    o.material = Array.isArray(o.material) ? picked : picked[0];
+    // STL 三角面绕向不一定一致，双面渲染已经写在材质上；
+    // 投影是白底上唯一能读出"它站在地上"的线索，所以每个网格都参与。
+    o.castShadow = true;
+    o.receiveShadow = true;
   });
 }
 
@@ -170,11 +207,12 @@ export function frameCamera(robot, camera) {
   const vFov = THREE.MathUtils.degToRad(camera.fov);
   const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
   const fov = Math.max(Math.min(vFov, hFov), 1e-3); // 窄的那一边决定距离
-  // 0.95 会把整条臂顶到画面边缘。现在只占左半屏，留一成余量给它呼吸。
-  const dist = (radius / Math.sin(fov / 2)) * 1.06;
+  // 0.95 会把整条臂顶到画面边缘。白屏之后画面里只有臂，可以再收紧一点：
+  // 观众要看的是姿态，不是留白。
+  const dist = (radius / Math.sin(fov / 2)) * 0.82;
 
   // 默认机位：斜前上方，接近观众站在实机前面的角度
-  const dir = new THREE.Vector3(1.0, 0.42, 1.15).normalize();
+  const dir = new THREE.Vector3(0.92, 0.40, 1.2).normalize();
   camera.position.copy(center).addScaledVector(dir, dist);
   camera.near = Math.max(dist / 500, 0.0005);
   camera.far = dist * 200;

@@ -6,14 +6,44 @@
  *
  * 配色只有一条规则：平时整块屏是单色的，只有数字层偏离实机时出现信号红。
  * 偏离时红出现在左边那块屏上，因为偏离就发生在它身上。颜色是读数，不是装饰。
+ *
+ * ── 2026-11 改版：一白一黑
+ *
+ * 左屏是**白纸上的黑色机械臂**，右屏是**黑底上的彩色代码**。这不是两种风格，
+ * 是同一个东西的两次曝光：可见的那一半（实体/数字层）在亮处，不可见的那一半（代码）在暗处。
+ * 房间是暗的，所以左边那块屏像一张被灯打亮的展板，右边那块屏像一块还没关掉的终端。
  */
 
 :root {
   color-scheme: dark;
 
-  /* 房间：两块屏之间和四周露出来的底色，比两块屏都暗 */
-  --bg: #07080a;
-  /* 两块屏各自的底色与标题条。右屏比左屏亮一档，读起来才是两块不同的屏 */
+  /* 房间：两块屏之间和四周露出来的底色。改了白屏之后它必须更暗，
+     否则白屏就不"亮"了 */
+  --bg: #08090b;
+
+  /* 左屏：纸。不是纯白 —— 纯白在投影和大屏上会刺眼，且丢掉"印刷品"的质感 */
+  --paper: #f3f1ec;
+  --paper-shade: #e9e6dd;
+
+  /* 右屏：终端。比纯黑亮一点点，长时间看屏幕边缘不会发闷 */
+  --term: #0a0b0d;
+  --term-head: #101216;
+  --term-2: #15171b;
+  --term-rule: #23262b;
+
+  /* VS Code Dark+ 的 token 色。代码层靠这套颜色立住"这是一段真代码"的可信度 */
+  --tk-txt: #c9ced6;
+  --tk-kw: #569cd6;
+  --tk-ctrl: #c586c0;
+  --tk-str: #ce9178;
+  --tk-num: #b5cea8;
+  --tk-fn: #dcdcaa;
+  --tk-type: #4ec9b0;
+  --tk-var: #9cdcfe;
+  --tk-com: #6a9955;
+  --tk-punc: #7c848f;
+
+  /* 两块屏各自的底色与标题条（左屏在 #screen-a 里被整体覆盖成纸色） */
   --stage: #0e1114;
   --stage-head: #131a1f;
   --surface: #14181b;
@@ -37,11 +67,6 @@
 
   /* 观众坐在几米外看大屏，字号整体偏大，跟着屏宽长 */
   --u: clamp(13px, 0.55vw + 6px, 18px);
-  --t-xs: calc(var(--u) * 0.78);
-  --t-sm: calc(var(--u) * 0.9);
-  --t-md: var(--u);
-  --t-lg: calc(var(--u) * 1.25);
-  --t-xl: calc(var(--u) * 1.95);
 
   /* 标题用重衬线，全页只出现这一次；其余全是窄体无衬线 + 等宽数字 */
   --font-display: "Source Han Serif SC Heavy", "Noto Serif SC", "Source Han Serif SC",
@@ -55,6 +80,40 @@
   --pad: clamp(12px, 1.1vw, 22px);
   /* 两块屏之间的距离，也就是"房间"露出来的宽度 */
   --gap: clamp(10px, 1.15vw, 24px);
+
+  /* 两条缓动：进出用 expo-out（收尾快），位移用 quart */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ───────────────────────────────────────── 左屏的纸色作用域
+
+   所有依赖 --ink / --rule / --stage 的规则都在这里自动翻成黑字白底，
+   不用逐条改。这是整块屏"变成白纸"的唯一开关。 */
+
+#screen-a {
+  color-scheme: light;
+  --stage: var(--paper);
+  --stage-head: var(--paper);
+  --ink: #16171a;
+  --ink-2: #3a3c40;
+  --ink-3: #6b6d70;
+  --ink-4: #9a9b9b;
+  --rule: #ddd9ce;
+  --rule-2: #c9c4b7;
+  --bezel: #17181a;
+  /* 白底上红色要压深一点才立得住，否则会发飘 */
+  --signal: #a82a1e;
+  --signal-lit: #a82a1e;
+}
+
+/* 右屏的作用域：只覆盖基础面，字色沿用 body 的浅墨 */
+#screen-b {
+  --surface: var(--term);
+  --surface-head: var(--term-head);
+  --surface-2: var(--term-2);
+  --rule: var(--term-rule);
+  --rule-2: #2b2f35;
+  --bezel: #23262b;
 }
 
 * { box-sizing: border-box; }
@@ -72,6 +131,17 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
+
+  /* 字号阶梯必须定义在 body 上，不能定义在 :root ——
+     自定义属性里的 var() 在「声明它的那个元素」上解析，:root 的 --t-sm 一旦
+     按 :root 的 --u 算成固定值，后面对 --u 的覆盖（单屏视图那一档）就再也影响不到字号。
+     这个坑原来一直在：单屏视图的 --u 是 15px，但正文一直按 13px 显示。 */
+  --t-xs: calc(var(--u) * 0.78);
+  --t-sm: calc(var(--u) * 0.9);
+  --t-md: var(--u);
+  --t-lg: calc(var(--u) * 1.25);
+  --t-xl: calc(var(--u) * 1.95);
+
   font-size: var(--t-md);
   font-kerning: normal;
   font-weight: 400;
@@ -254,6 +324,19 @@ body {
   min-height: 0;
 }
 
+/* 白屏上的印刷网点。极淡（0.055），远看是纸的质地，近看才看出点阵。
+   它盖在 3D 画面上，让「渲染出来的像」多一层印刷品的质感 ——
+   这是整块屏的底色，不是装饰：它把屏幕从「一个网页」拉回「一张印出来的东西」。 */
+#screen-a .screen-body::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 1px 1px, rgba(22, 19, 14, 0.055) 1px, transparent 0);
+  background-size: 3.5px 3.5px;
+}
+
 /* 偏离时整块左屏勾红：这件事发生在数字层身上，红就出现在它这块屏上 */
 .screen.deviating { border-color: var(--signal); }
 .screen.deviating .screen-head { border-bottom-color: var(--signal); }
@@ -269,7 +352,9 @@ body {
   position: absolute;
   width: calc(var(--u) * 0.85);
   height: calc(var(--u) * 0.85);
-  border: 0 solid var(--rule-2);
+  /* 白屏上这四道角标是整块屏唯一的「框」：像图纸的裁切标记，不用整圈描边 */
+  border: 0 solid var(--bezel);
+  opacity: 0.5;
 }
 .crops i:nth-child(1) { left: calc(var(--pad) * 0.6); top: calc(var(--pad) * 0.6); border-left-width: 1px; border-top-width: 1px; }
 .crops i:nth-child(2) { right: calc(var(--pad) * 0.6); top: calc(var(--pad) * 0.6); border-right-width: 1px; border-top-width: 1px; }
@@ -333,7 +418,10 @@ body {
   border-bottom: 1px solid var(--rule);
 }
 #console .block:last-child { border-bottom: 0; }
+/* 高度怎么分：代码按内容占（最多 16u，再多就自己滚），事件区吃剩下的。
+   反过来（代码 grow）会让 4 行代码下面空一大片黑，而事件流被压成三行。 */
 #console .block.grow { flex: 1 1 auto; min-height: 0; }
+#console .block.sec-code { flex: 0 1 auto; overflow: hidden; }
 
 .block-head {
   display: flex;
@@ -411,7 +499,8 @@ body {
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) 5.4ch 5.4ch;
   align-items: center;
   gap: calc(var(--u) * 0.45);
-  padding: calc(var(--u) * 0.22) 0;
+  /* 六行要挤在代码区之上，行距压紧一点，别抢代码的地方 */
+  padding: calc(var(--u) * 0.13) 0;
 }
 .jrow.jhead {
   font-size: var(--t-xs);
@@ -484,10 +573,11 @@ body {
   align-items: baseline;
   justify-content: center;
   gap: 0.45em;
-  padding: calc(var(--u) * 0.5) calc(var(--u) * 0.4);
-  border: 1px solid var(--bezel);
-  background: var(--surface-2);
-  color: var(--ink-3);
+  padding: calc(var(--u) * 0.45) calc(var(--u) * 0.4);
+  /* 透明底 + 一条细边：它是控件，不该是这块屏上最亮的东西 */
+  border: 1px solid var(--rule-2);
+  background: transparent;
+  color: var(--ink-2);
   font-family: var(--font-sans);
   font-size: var(--t-sm);
   letter-spacing: 0.06em;
@@ -502,10 +592,10 @@ body {
   color: var(--ink-4);
   font-variant-numeric: tabular-nums;
 }
-.dbtn:hover { color: var(--ink); border-color: var(--ink-4); }
+.dbtn:hover { color: var(--ink); border-color: var(--ink-4); background: rgba(255, 255, 255, 0.03); }
 .dbtn.on {
-  border-color: var(--ink-2);
-  background: var(--surface-head);
+  border-color: var(--ink-3);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--ink);
 }
 .dbtn.on b { color: var(--ink-2); }
@@ -538,51 +628,83 @@ body {
 .tab:hover { color: var(--ink-2); }
 .tab.on { border-bottom-color: var(--ink); color: var(--ink); }
 
-/* 代码块是唯一可以被压的「固定段」：窗口特别矮的时候先压它，
-   免得最下面那格手动控制被挤出可视区。压下去之后它在自己的列表里滚。 */
-#console .block.sec-code {
-  flex: 0 1 auto;
-  overflow: hidden;
-}
-
+/* 代码块：像一块真的编辑器，上下边缘渐隐进黑里 —— 观众看到的是「一直有代码在跑」，
+   而不是「一个列表刚好有 5 行」。 */
 ol.code {
-  flex: 1 1 auto;
-  min-height: calc(var(--u) * 5);
+  --code-mask: linear-gradient(to bottom, transparent 0, #000 6%, #000 92%, transparent 100%);
+  /* 列表本身不拉伸：块可以 grow，但列表高度跟着内容走 ——
+     否则 4 行代码下面会空出一大片，而「动作之间的停顿」那行说明被推到最底下。 */
+  flex: 0 1 auto;
+  min-height: calc(var(--u) * 4);
   /* 关键帧多的动作能列二三十行。给个上限内部滚，别把下面两段挤没了 */
-  max-height: calc(var(--u) * 13);
+  max-height: calc(var(--u) * 16);
   margin: 0;
-  padding: 0;
+  padding: calc(var(--u) * 0.12) 0;
   overflow-y: auto;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
   list-style: none;
 }
+/* 内容装得下的时候不要渐隐：4 行代码的最后一行会被蒙掉一半 */
+ol.code.overflowing {
+  mask-image: var(--code-mask);
+  -webkit-mask-image: var(--code-mask);
+}
+ol.code::-webkit-scrollbar { display: none; }
+
+/* 换块：旧的往上抽走、淡出，新的从下面浮上来。这是「循环滚动」的手感来源 ——
+   切换之间没有硬切，像终端刷了一屏。 */
+ol.code.swap-out { animation: code-out 170ms ease-in both; }
+ol.code.swap-in { animation: code-in 340ms var(--ease-out) both; }
+@keyframes code-out {
+  to { opacity: 0; transform: translateY(-9px); }
+}
+@keyframes code-in {
+  from { opacity: 0; transform: translateY(11px); }
+  to { opacity: 1; transform: none; }
+}
+
 .code .ln {
   display: grid;
-  grid-template-columns: 2.4em minmax(0, 1fr);
-  gap: calc(var(--u) * 0.5);
-  padding: 0.2em 0.5em;
+  grid-template-columns: 2.2em minmax(0, 1fr);
+  gap: calc(var(--u) * 0.45);
+  padding: 0.18em 0.55em;
   border-left: 2px solid transparent;
+  transition: background 200ms linear, border-color 200ms linear;
 }
 .code .ln code,
 .code .lno {
   font-family: var(--font-mono);
-  font-size: var(--t-xs);
+  /* 代码是观众要读的东西，不能比正文小 —— 三米外要看清 tick( 和 now 的区别 */
+  font-size: var(--t-md);
   line-height: 1.55;
   font-variant-ligatures: none;
 }
 .code .ln code {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  color: var(--ink-3);
+  color: var(--tk-txt);
 }
-.code .lno { text-align: right; color: var(--ink-4); }
+.code .lno { text-align: right; color: #343a42; }
 .code .ln.empty { grid-template-columns: minmax(0, 1fr); }
 .code .ln.empty code { color: var(--ink-4); }
+/* 当前行：左边一条亮线，底色只亮一档。它由真实状态驱动，不是定时器在跑 */
 .code .ln.lit {
-  border-left-color: var(--ink);
-  background: var(--surface-2);
+  border-left-color: var(--tk-kw);
+  background: rgba(255, 255, 255, 0.045);
 }
-.code .ln.lit code { color: var(--ink); }
-.code .ln.lit .lno { color: var(--ink-2); }
+.code .ln.lit .lno { color: #6d757f; }
+
+/* VS Code Dark+ 的 token 色。极简分词器在 console.js，只认这九类 */
+.tk-kw { color: var(--tk-kw); }
+.tk-ctrl { color: var(--tk-ctrl); }
+.tk-str { color: var(--tk-str); }
+.tk-num { color: var(--tk-num); }
+.tk-fn { color: var(--tk-fn); }
+.tk-type { color: var(--tk-type); }
+.tk-var { color: var(--tk-var); }
+.tk-com { color: var(--tk-com); }
+.tk-punc { color: var(--tk-punc); }
 
 /* 事件 */
 
@@ -595,6 +717,9 @@ ol.trace {
   list-style: none;
   font-family: var(--font-mono);
   font-size: var(--t-xs);
+  /* 顶边渐隐：自动跟到底时最上面那行会被切一半，渐掉比切一半好看 */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 100%);
 }
 .trace .tr {
   display: grid;
@@ -737,6 +862,52 @@ ol.trace {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ───────────────────────────────────────── 左屏 · 关节角菜单（单击展开）
+
+   观众看的是像，够不到右屏那张表。这块菜单就长在数字层自己身上：
+   点一下展开，六个关节的当前角度都在，滑块可以拨 —— 拨了就是接管，
+   和代码层那个抽屉走同一套逻辑（createJointPanel）。 */
+
+.angle-menu {
+  position: absolute;
+  right: calc(var(--pad) * 0.9);
+  bottom: calc(var(--pad) * 0.9);
+  z-index: 6;
+  width: clamp(212px, 21vw, 320px);
+  padding: 0;
+  border: 1px solid var(--bezel);
+  background: rgba(243, 241, 236, 0.95);
+  box-shadow: 0 calc(var(--u) * 0.4) calc(var(--u) * 1.4) rgba(22, 19, 14, 0.12);
+  backdrop-filter: blur(3px);
+}
+/* 收起来时只占一个字宽的胶囊，不挡画面 */
+.angle-menu[data-open="0"] { width: auto; min-width: 7.5em; }
+.angle-menu .drawer-head { padding: calc(var(--u) * 0.55) calc(var(--u) * 0.8); }
+.angle-menu .drawer-body { padding: 0 calc(var(--u) * 0.8) calc(var(--u) * 0.7); }
+.angle-menu .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) 4.8ch; }
+/* 菜单窄，中文名 + 滑块 + 数值就够，不要两行标签 */
+.angle-menu .row > .lab .hint { display: none; }
+/* 白色卡片里的按钮要有能看见的边 */
+.angle-menu button {
+  border-color: var(--rule-2);
+  color: var(--ink-2);
+}
+.angle-menu .note { color: var(--ink-4); }
+
+/* 展签：左下角一行小字，只交代这是什么。像美术馆墙上那张牌 */
+#plaque {
+  position: absolute;
+  left: calc(var(--pad) * 0.6 + var(--u) * 1.1);
+  bottom: calc(var(--pad) * 0.6 + var(--u) * 1.15);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  pointer-events: none;
 }
 
 /* ───────────────────────────────────────── 单屏视图（一块屏一个窗口）

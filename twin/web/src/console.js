@@ -66,6 +66,54 @@ function el(tag, cls, text) {
   return n;
 }
 
+// ───────────────────────────────────────────── 极简分词器
+//
+// 代码层要读起来像一块真的编辑器，所以按 VS Code Dark+ 的规矩上色。
+// 只认九类 token，不做语法分析 —— 这些行是固定的、人能看懂的片段，
+// 正则扫一遍就够了。真正的解析器在这里没有价值，只会变慢。
+
+const PY_CONTROL = new Set([
+  'if', 'else', 'elif', 'for', 'in', 'while', 'return', 'await', 'async',
+  'try', 'except', 'finally', 'raise', 'yield', 'with', 'as', 'lambda',
+]);
+const PY_KEYWORD = new Set([
+  'import', 'from', 'def', 'class', 'and', 'or', 'not', 'is', 'None',
+  'True', 'False', 'pass', 'del', 'global', 'nonlocal', 'assert',
+]);
+
+const TOKEN_RE =
+  /(#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|([^\sA-Za-z0-9_]+)/g;
+
+function esc(s) {
+  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+}
+
+/** 一行代码 → 带 span 的 HTML。调用方保证内容来自本仓库的固定字符串。 */
+export function highlight(code) {
+  if (!code) return '';
+  const out = [];
+  for (const m of code.matchAll(TOKEN_RE)) {
+    const [tok, com, str, num, ident, space, punc] = m;
+    if (com) out.push(`<span class="tk-com">${esc(com)}</span>`);
+    else if (str) out.push(`<span class="tk-str">${esc(str)}</span>`);
+    else if (num) out.push(`<span class="tk-num">${esc(num)}</span>`);
+    else if (ident) {
+      // 后面紧跟左括号的算调用 —— 比维护一张函数名表可靠
+      const next = code.slice(m.index + tok.length).trimStart()[0] ?? '';
+      const cls = PY_CONTROL.has(ident)
+        ? 'tk-ctrl'
+        : PY_KEYWORD.has(ident)
+          ? 'tk-kw'
+          : next === '('
+            ? 'tk-fn'
+            : 'tk-var';
+      out.push(`<span class="${cls}">${esc(ident)}</span>`);
+    } else if (space) out.push(space);
+    else if (punc) out.push(`<span class="tk-punc">${esc(punc)}</span>`);
+  }
+  return out.join('');
+}
+
 /** 关节值 → 行程上的位置（0 到 1，按 URDF 限位） */
 function norm(value, lower, upper) {
   if (!(upper > lower)) return 0.5;
@@ -141,13 +189,11 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
   const jointBlock = el('section', 'block');
   {
     const h = el('h2', 'block-head');
-    h.append(el('span', 'lead', '关节角'), el('em', null, '度'));
+    // 列标题并进这一行：六行数据旁边再单开一行「关节 / 行程 / 目标 / 实际」，
+    // 挤掉的是代码区的高度，而代码才是这块屏的主角。
+    h.append(el('span', 'lead', '关节角'), el('em', null, '目标 / 实际 · 度'));
     jointBlock.append(h);
   }
-  const head = el('div', 'jrow jhead');
-  head.append(el('span', 'jname', '关节'), el('span', 'jgauge', '行程'));
-  head.append(el('span', 'jnum', '目标'), el('span', 'jnum', '实际'));
-  jointBlock.append(head);
 
   const rows = joints.map(({ name, lower, upper }) => {
     // listJoints 给的是 URDF 的弧度，这里的读数全是度 —— 先换过来再比，
@@ -203,7 +249,7 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     b.addEventListener('click', () => {
       pinned = true;
       plateIndex = i;
-      renderPlate();
+      renderPlate(true);
     });
     codeTabs.append(b);
     return b;
@@ -261,30 +307,62 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     return null; // 动作块按关键帧下标高亮，见 renderMotion
   }
 
-  function renderPlate() {
+  function renderPlate(animate = false) {
     const plate = PLATES[plateIndex];
     tabEls.forEach((b, i) => b.classList.toggle('on', i === plateIndex));
     codeSrc.textContent = plate.dynamic ? state.motionSource : plate.source;
 
     let lines = plate.lines;
     if (plate.dynamic) lines = motionLines(state.poses);
+    codeList.classList.remove('swap-in');
     if (!lines.length) {
       const li = el('li', 'ln empty');
       li.append(el('code', null, CAPTION.noPoses));
       codeList.replaceChildren(li);
       codeNote.textContent = '';
       state.litIndex = -1;
+      if (animate) restartSwapIn();
       return;
     }
     codeList.replaceChildren(
       ...lines.map((ln, i) => {
         const li = el('li', 'ln');
         li.append(el('span', 'lno', String(i + 1).padStart(2, '0')));
-        li.append(el('code', null, ln.code));
+        const code = el('code');
+        // 内容是本仓库里的固定字符串，交给分词器上色
+        code.innerHTML = highlight(ln.code);
+        li.append(code);
         return li;
       }),
     );
     state.litIndex = -1;
+    // 只有内容真溢出时才渐隐边缘 —— 否则 4 行代码的最后一行会被蒙掉一半
+    requestAnimationFrame(() => {
+      codeList.classList.toggle('overflowing', codeList.scrollHeight > codeList.clientHeight + 2);
+    });
+    if (animate) restartSwapIn();
+  }
+
+  /** 让淡入重新播一次：先摘 class，强制重排，再挂回去 */
+  function restartSwapIn() {
+    codeList.classList.remove('swap-in');
+    void codeList.offsetWidth;
+    codeList.classList.add('swap-in');
+  }
+
+  // 换块：旧的往上抽走淡出（170ms，与 CSS 一致），再换内容淡入。
+  // 观众看到的是"刷了一屏"，不是"点了一个 tab"。
+  let swapTimer = null;
+  function swapTo(nextIndex) {
+    if (swapTimer || nextIndex === plateIndex) return;
+    codeList.classList.remove('swap-in');
+    codeList.classList.add('swap-out');
+    swapTimer = setTimeout(() => {
+      swapTimer = null;
+      plateIndex = nextIndex;
+      codeList.classList.remove('swap-out');
+      renderPlate(true);
+    }, 170);
   }
 
   /** 只改 class，不重建节点 —— 高亮每次同步都可能变 */
@@ -293,7 +371,12 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     const kids = codeList.children;
     if (state.litIndex >= 0 && kids[state.litIndex]) kids[state.litIndex].classList.remove('lit');
     state.litIndex = index;
-    if (index >= 0 && kids[index]) kids[index].classList.add('lit');
+    if (index >= 0 && kids[index]) {
+      kids[index].classList.add('lit');
+      // 当前行往下走时列表跟着滚：观众看到的是「代码在跑」，
+      // 而不是「一个静态列表里有条线在跳」。只在真正换行时滚，30Hz 不会抖。
+      kids[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
   }
 
   function syncCode(s) {
@@ -418,7 +501,7 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
       if (msg.path) state.motionSource = msg.path;
       state.arrived = -1;
       state.matched = false;
-      if (plateIndex === 1) renderPlate();
+      if (plateIndex === 1) renderPlate(true);
       if (lastS) syncCode(lastS);
     },
 
@@ -445,8 +528,8 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
       renderPlate();
       plateTimer = setInterval(() => {
         if (pinned) return;
-        plateIndex = (plateIndex + 1) % PLATES.length;
-        renderPlate();
+        // 走 swapTo：旧内容先抽走淡出，再换新内容淡入
+        swapTo((plateIndex + 1) % PLATES.length);
       }, ROTATE_MS);
     },
   };

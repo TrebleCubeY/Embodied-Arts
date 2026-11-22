@@ -417,8 +417,11 @@ async function main() {
         window.__TWIN_SET_JOINT__('gripper', ${grip * RAD});
       `;
 
-      // 摆到抓取姿态、张着爪。reset 和摆姿态放在同一次求值里，中间不留帧
+      // 摆到抓取姿态、张着爪。reset 和摆姿态放在同一次求值里，中间不留帧。
+      // 另外要先把「当前动作」标成夹取类 —— 方块平时不存在，只有夹取动作里才允许出现，
+      // 而自检没有事件流，动作名得手动给。
       await cdp.evaluate(`
+        window.__TWIN_SET_ACTION__('pick_red_block');
         window.__TWIN_RESET_BLOCK__();
         window.__TWIN_SET_ALL__(0);
         ${poseAt(28, 12.5, 90)}
@@ -449,6 +452,9 @@ async function main() {
       `);
       blk = await waitBlock(cdp, '!b.held && b.pos[1] < 0.02', 6000);
       check(blk.ok, '松口后方块落回地面', `held = ${blk.b?.held}，方块 y = ${blk.b?.pos[1]}`);
+
+      // 收尾：清掉手动给的"正在演夹取动作"，让方块回到「平时不存在」的状态
+      await cdp.evaluate(`window.__TWIN_SET_ACTION__(null)`);
 
       // 收尾：给了 --pose 就摆成那个姿态，否则复位到 URDF 零位再截图
       if (POSE.length) {

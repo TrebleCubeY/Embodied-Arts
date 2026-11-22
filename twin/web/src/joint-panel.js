@@ -39,7 +39,9 @@ export function createJointPanel(container, joints, hooks = {}) {
   head.type = 'button';
   head.className = 'drawer-head';
   const title = document.createElement('span');
-  title.textContent = '手动控制';
+  // 标题交给调用方定：代码层叫「关节角」，左屏那个浮层菜单也一样 ——
+  // 它们展示的是同一组数，没有理由起两个名字。
+  title.textContent = hooks.title ?? '关节角';
   const headState = document.createElement('em');
   headState.className = 'state';
   headState.style.fontStyle = 'normal';
