@@ -414,20 +414,22 @@ body {
   /* 不许被压缩：flex 默认会按比例缩，事件一多前面几块就被压扁、文字叠到一起。
      高度不够时应该只让 grow 的那一块（事件流）缩，并在它内部滚。 */
   flex: 0 0 auto;
-  padding: calc(var(--u) * 0.7) var(--pad) calc(var(--u) * 0.8);
+  padding: calc(var(--u) * 0.45) var(--pad) calc(var(--u) * 0.5);
   border-bottom: 1px solid var(--rule);
 }
 #console .block:last-child { border-bottom: 0; }
-/* 高度怎么分：代码按内容占（最多 16u，再多就自己滚），事件区吃剩下的。
-   反过来（代码 grow）会让 4 行代码下面空一大片黑，而事件流被压成三行。 */
-#console .block.grow { flex: 1 1 auto; min-height: 0; }
-#console .block.sec-code { flex: 0 1 auto; overflow: hidden; }
+/* 高度怎么分：代码是这块屏的主体，至少占 60%；事件吃剩下的，不够就自己滚。
+   不这么写的话，关节角和驱动两块加起来会吃掉半屏，代码只剩四行。
+   用 vh 而不是 %：flex item 的百分比 min-height 在父容器是 flex 时不可靠。 */
+#console .block.sec-code { flex: 1 1 auto; min-height: 60vh; overflow: hidden; }
+/* 事件给一个下限：代码块 60vh 是硬要求，但事件被压到只剩标题就没意义了 */
+#console .block.grow { flex: 1 1 0; min-height: calc(var(--u) * 4.2); }
 
 .block-head {
   display: flex;
   align-items: baseline;
   gap: calc(var(--u) * 0.55);
-  margin: 0 0 calc(var(--u) * 0.55);
+  margin: 0 0 calc(var(--u) * 0.32);
   font-size: var(--t-xs);
   font-weight: 400;
   letter-spacing: 0.16em;
@@ -494,13 +496,26 @@ body {
 
 /* 关节角 */
 
+/* 屏够宽就两列：六行单列要吃掉五分之一屏高，而这块屏的高度要留给代码。
+   用容器查询而不是媒体查询 —— 看的是 console 自己多宽，不是窗口多宽
+   （both 视图里窗口很宽但 console 只有 600）。 */
+#console { container-type: inline-size; }
+.jgrid { display: grid; grid-template-columns: minmax(0, 1fr); }
+@container (min-width: 700px) {
+  .jgrid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: calc(var(--u) * 1.6);
+  }
+}
+
 .jrow {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) 5.4ch 5.4ch;
   align-items: center;
   gap: calc(var(--u) * 0.45);
-  /* 六行要挤在代码区之上，行距压紧一点，别抢代码的地方 */
-  padding: calc(var(--u) * 0.13) 0;
+  /* 六行读数要挤在代码区之上：行距压到能读但不占地方 */
+  padding: calc(var(--u) * 0.05) 0;
+  line-height: 1.15;
 }
 .jrow.jhead {
   font-size: var(--t-xs);
@@ -510,7 +525,7 @@ body {
 .jhead .jnum { font-family: var(--font-sans); color: var(--ink-4); }
 .jname {
   overflow: hidden;
-  font-size: var(--t-sm);
+  font-size: var(--t-xs);
   color: var(--ink-2);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -518,7 +533,7 @@ body {
 .jhead .jname { font-size: var(--t-xs); color: var(--ink-4); }
 .jnum {
   font-family: var(--font-mono);
-  font-size: var(--t-sm);
+  font-size: var(--t-xs);
   font-variant-numeric: tabular-nums;
   text-align: right;
   color: var(--ink);
@@ -562,7 +577,7 @@ body {
 /* 驱动档：代码层最上面那一格。三个按钮是唯一能让观众看见「谁在动」的开关。
    选中态用墨色，不用信号红 —— 红只留给「数字层偏离实机」。 */
 
-#console .block.drive { padding-bottom: calc(var(--u) * 0.7); }
+#console .block.drive { padding-bottom: calc(var(--u) * 0.45); }
 .drivebar {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -573,7 +588,7 @@ body {
   align-items: baseline;
   justify-content: center;
   gap: 0.45em;
-  padding: calc(var(--u) * 0.45) calc(var(--u) * 0.4);
+  padding: calc(var(--u) * 0.32) calc(var(--u) * 0.4);
   /* 透明底 + 一条细边：它是控件，不该是这块屏上最亮的东西 */
   border: 1px solid var(--rule-2);
   background: transparent;
@@ -599,13 +614,8 @@ body {
   color: var(--ink);
 }
 .dbtn.on b { color: var(--ink-2); }
-.drive-state {
-  margin: calc(var(--u) * 0.45) 0 0;
-  font-family: var(--font-mono);
-  font-size: var(--t-xs);
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
+/* 档位状态并进了 .block-head 的 em，不再单占一行 */
+.drive-state { color: var(--ink-3); }
 #console .block.drive.paused .drive-state { color: var(--ink); }
 
 /* 代码轮转 */
@@ -632,12 +642,10 @@ body {
    而不是「一个列表刚好有 5 行」。 */
 ol.code {
   --code-mask: linear-gradient(to bottom, transparent 0, #000 6%, #000 92%, transparent 100%);
-  /* 列表本身不拉伸：块可以 grow，但列表高度跟着内容走 ——
-     否则 4 行代码下面会空出一大片，而「动作之间的停顿」那行说明被推到最底下。 */
-  flex: 0 1 auto;
-  min-height: calc(var(--u) * 4);
-  /* 关键帧多的动作能列二三十行。给个上限内部滚，别把下面两段挤没了 */
-  max-height: calc(var(--u) * 16);
+  /* 列表在代码块里撑满：内容少时下面留黑是终端的样子，内容多时在块内滚 */
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   margin: 0;
   padding: calc(var(--u) * 0.12) 0;
   overflow-y: auto;

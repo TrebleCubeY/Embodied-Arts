@@ -132,7 +132,9 @@ export function countMeshes(root) {
 // 做不出"磨砂黑在纸背景上的那一点高光"，黑色会糊成一片。
 const BODY_COLOR = new THREE.Color('#1a1b1f');
 const SERVO_COLOR = new THREE.Color('#0d0e10');
-const JAW_COLOR = new THREE.Color('#f3f0e9');
+// 夹爪要「更白」：白到接近纯白，但不能和纸底撞色 —— 纸是 #f3f1ec（暖），
+// 这里偏冷一点点（同亮度、蓝通道略高），靠冷暖差而不是明度差把两片颚从背景里分出来。
+const JAW_COLOR = new THREE.Color('#fbfcfa');
 
 /** 往上找最近的 URDF link 名。夹爪判定靠它，不靠网格文件名 */
 function linkNameOf(obj) {

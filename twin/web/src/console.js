@@ -166,10 +166,12 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
 
   // ────────────────────────────────────────────── 驱动档
   // 放最上面：演示时最先动的就是它。观众看到的每一行读数都取决于这一档。
+  // 档位状态并进标题行（右边那一小段），单独占一行太贵 —— 这块屏的位置要留给代码。
   const driveBlock = el('section', 'block drive');
+  const driveState = el('em', 'drive-state', '等桥上报档位…');
   {
     const h = el('h2', 'block-head');
-    h.append(el('span', 'lead', '驱动'), el('em', null, '键 1 · 2 · 3'));
+    h.append(el('span', 'lead', '驱动'), driveState);
     driveBlock.append(h);
   }
   const driveBar = el('div', 'drivebar');
@@ -182,8 +184,7 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     driveBar.append(b);
     return b;
   });
-  const driveState = el('p', 'drive-state', '等桥上报档位…');
-  driveBlock.append(driveBar, driveState);
+  driveBlock.append(driveBar);
 
   // ────────────────────────────────────────────── 关节角
   const jointBlock = el('section', 'block');
@@ -194,6 +195,11 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     h.append(el('span', 'lead', '关节角'), el('em', null, '目标 / 实际 · 度'));
     jointBlock.append(h);
   }
+
+  // 六行读数放进一个网格里：屏够宽就分两列，高度直接省一半 —— 这块屏的高度
+  // 得留给代码，六行单列排下来要吃掉一整屏的五分之一。
+  const jointGrid = el('div', 'jgrid');
+  jointBlock.append(jointGrid);
 
   const rows = joints.map(({ name, lower, upper }) => {
     // listJoints 给的是 URDF 的弧度，这里的读数全是度 —— 先换过来再比，
@@ -211,7 +217,7 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     const tgtNum = el('span', 'jnum', '0.0');
     const actNum = el('span', 'jnum', '0.0');
     row.append(nameEl, gauge, tgtNum, actNum);
-    jointBlock.append(row);
+    jointGrid.append(row);
     const r = {
       name,
       lower: lo,
