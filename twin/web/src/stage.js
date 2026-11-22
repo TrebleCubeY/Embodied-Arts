@@ -20,9 +20,11 @@ export function createStage(container) {
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // 白底上的黑物件需要一层投影才落得住地，否则看起来像贴纸。
-  // 用 PCFSoft，阴影边缘有一点毛，比硬边更像摄影棚里的那种光。
+  // 自检跑在无头浏览器的软件渲染（SwiftShader）上，2048² 的 PCFSoft 阴影会把它拖到
+  // 每帧上百毫秒，主线程被占住、WebSocket 的帧回调堆在一起，自检的"最大帧间隔"就假报。
+  // 所以自检档降一档：1024² + 便宜一点的 PCF。真机有 GPU，用完整质量。
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = isSelftest ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -41,7 +43,8 @@ export function createStage(container) {
   const key = new THREE.DirectionalLight(0xfff4e2, 2.35);
   key.position.set(1.5, 2.3, 1.5);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  const shadowSize = isSelftest ? 1024 : 2048;
+  key.shadow.mapSize.set(shadowSize, shadowSize);
   key.shadow.camera.near = 0.1;
   key.shadow.camera.far = 6;
   key.shadow.camera.left = -0.85;

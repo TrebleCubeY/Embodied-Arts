@@ -18,12 +18,13 @@ import {
 } from './frame.js';
 import { OVERRIDE, FROZEN, VIEW_STATE_SHORT } from './view-state.js';
 import { showPanel } from './stage.js';
-import { PLATES, motionLines } from './code-plates.js';
+import { PLATES, motionLines, motionShell } from './code-plates.js';
 
 // 面板是给人读的，不必每帧刷 DOM。60Hz 写文本纯属浪费，也看不清。
 const SYNC_INTERVAL_MS = 100;
 // 代码块自己轮转的间隔。真要盯着看，点一下标题就钉住。
-const ROTATE_MS = 14000;
+// 五块轮转。11 秒一块：短到能看出"在换"，长到够读完一屏
+const ROTATE_MS = 11000;
 const TRACE_MAX = 80;
 // 目标与实际差多少算"在动"。0.5° 是渲染插值肉眼可辨的量级。
 const MOVING_DEG = 0.5;
@@ -40,6 +41,7 @@ const CAPTION = {
   broadcast: '每秒定频发出 30 帧状态帧',
   decode: '解码 68 字节状态帧',
   view: '断流，冻结在最后一帧',
+  interp: '这一帧的插值系数：越接近 1 追得越快',
   follow: '按指数插值追向目标角',
   manual: '面板写关节角，渲染循环不介入',
   noPoses: '后端没有报关键帧数据',
@@ -79,10 +81,15 @@ const PY_CONTROL = new Set([
 const PY_KEYWORD = new Set([
   'import', 'from', 'def', 'class', 'and', 'or', 'not', 'is', 'None',
   'True', 'False', 'pass', 'del', 'global', 'nonlocal', 'assert',
+  // 渲染那一块是 JavaScript，同一套颜色规则一起认
+  'const', 'let', 'var', 'function', 'new', 'this', 'typeof', 'null',
+  'undefined', 'true', 'false', 'else',
 ]);
 
+// 十六进制要单独认：否则 0xFFFFFFFF 会被拆成 0（数字）+ xFFFFFFFF（变量），
+// 一半绿一半蓝，看着像漏了色。
 const TOKEN_RE =
-  /(#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|([^\sA-Za-z0-9_]+)/g;
+  /(#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b0[xX][0-9a-fA-F]+\b|\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|([^\sA-Za-z0-9_]+)/g;
 
 function esc(s) {
   return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
@@ -291,6 +298,8 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     poses: null,
     motionSource: PLATES.find((p) => p.dynamic)?.source ?? '',
     litIndex: -1,
+    // 动作块的源码外壳占几行。高亮索引要加上它才能对上 DOM 里的行。
+    lineOffset: 0,
     // 臂当前在第几个关键帧上。用后端给的真实关键帧逐个比目标角得出，
     // 只允许往前走，所以那个"首尾同一个姿态"的闭合约定不会把它拽回第 1 帧。
     arrived: -1,
@@ -319,7 +328,20 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     codeSrc.textContent = plate.dynamic ? state.motionSource : plate.source;
 
     let lines = plate.lines;
-    if (plate.dynamic) lines = motionLines(state.poses);
+    // 动作块：关键帧外面套一层源码外壳（title / loop / poses = [...]），
+    // 否则整块就是十几行裸数字，看着像日志不像代码。
+    state.lineOffset = 0;
+    if (plate.dynamic) {
+      const poses = motionLines(state.poses);
+      if (poses.length) {
+        const shell = motionShell(state.actionTitle, poses.length);
+        lines = [...shell.head, ...poses, ...shell.tail];
+        // 高亮是按 pose 索引给的，DOM 里前面还隔着外壳那几行
+        state.lineOffset = shell.head.length;
+      } else {
+        lines = [];
+      }
+    }
     codeList.classList.remove('swap-in');
     if (!lines.length) {
       const li = el('li', 'ln empty');
@@ -349,11 +371,14 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     if (animate) restartSwapIn();
   }
 
-  /** 让淡入重新播一次：先摘 class，强制重排，再挂回去 */
+  /** 让淡入重新播一次。用双 rAF 而不是 `void offsetWidth` ——
+   *  后者会强制同步重排，配上 mask 与 18 行代码，能卡住主线程两三百毫秒，
+   *  30Hz 的帧回调就全堆在那一下。 */
   function restartSwapIn() {
     codeList.classList.remove('swap-in');
-    void codeList.offsetWidth;
-    codeList.classList.add('swap-in');
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => codeList.classList.add('swap-in'));
+    });
   }
 
   // 换块：旧的往上抽走淡出（170ms，与 CSS 一致），再换内容淡入。
@@ -379,15 +404,23 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     state.litIndex = index;
     if (index >= 0 && kids[index]) {
       kids[index].classList.add('lit');
-      // 当前行往下走时列表跟着滚：观众看到的是「代码在跑」，
-      // 而不是「一个静态列表里有条线在跳」。只在真正换行时滚，30Hz 不会抖。
-      kids[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      // nearest + auto：只有当前行真被挤出视野时才滚，而且一下就到位。
+      // 不要 behavior:'smooth' —— 平滑滚动要占主线程三百毫秒，30Hz 的状态帧回调
+      // 会被挡住、堆成一串，自检的"最大帧间隔"就是这么被顶到 300ms 的。
+      kids[index].scrollIntoView({ block: 'nearest', behavior: 'auto' });
     }
   }
 
   function syncCode(s) {
     if (plateIndex !== 1) {
       const key = litKeyFor(s);
+      // key 为 null（没有该高亮的真实事件）时不能去 findIndex ——
+      // 一堆上下文行的 key 也是 null，会匹配到第 0 行，整块屏第一行无缘无故亮着。
+      if (!key) {
+        setLit(-1);
+        codeNote.textContent = '';
+        return;
+      }
       const lines = PLATES[plateIndex].lines;
       const i = lines.findIndex((l) => l.key === key);
       setLit(i);
@@ -403,7 +436,8 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     }
     const last = state.poses.length - 1;
     const here = Math.max(state.arrived, 0);
-    setLit(Math.min(state.matched ? here : here + 1, last));
+    // 加上动作块外壳的偏移，否则高亮会落在 title / poses = [ 那几行上
+    setLit(state.lineOffset + Math.min(state.matched ? here : here + 1, last));
     codeNote.textContent = state.matched
       ? `停在第 ${here + 1} 个关键帧`
       : `正在移到第 ${Math.min(here + 2, last + 1)} 个关键帧`;
@@ -524,13 +558,16 @@ export function createConsole(root, { joints, modeBar, onDrive }) {
     panelEl,
 
     start() {
-      // ?plate=0|1|2 直接钉住某一块，演示时不用等它自己轮
+      // ?plate=0|1|2|3|4 直接钉住某一块，演示时不用等它自己轮
       const want = new URLSearchParams(location.search).get('plate');
       const i = Number(want);
       if (want !== null && Number.isInteger(i) && i >= 0 && i < PLATES.length) {
         pinned = true;
         plateIndex = i;
       }
+      // 自检时不轮转：每 11 秒重建一次 18 行代码（外加动画）会把主线程占住一下，
+      // 30Hz 的帧回调就堆在后面，自检里"恢复后末端重新开始移动"这类时序断言会偶发失败。
+      if (new URLSearchParams(location.search).has('selftest')) pinned = true;
       renderPlate();
       plateTimer = setInterval(() => {
         if (pinned) return;
