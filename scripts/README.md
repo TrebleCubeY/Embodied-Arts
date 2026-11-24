@@ -42,7 +42,9 @@ scripts\start_demo.cmd -Swap                    rem 两块屏的视图对调
 
 双击 `scripts\stop_demo.cmd`。
 
-先停后端，再给桥发 SIGINT。桥收到后释放扭矩，**臂会软下来，先托住它**。
+先停后端，再停桥。桥收到信号会走正常收尾，释放扭矩，**臂会软下来，先托住它**。
+
+`stop_bridge.sh` 先发 SIGINT，5 秒没退再 SIGTERM，最后才 SIGKILL。**只发 SIGINT 是不够的**：nohup 起的后台作业会继承「忽略 SIGINT」，发了等于没发。
 
 跳过桥（保留机械臂使能）：`scripts\stop_demo.cmd -KeepBridge`（要那就有 `scripts\stop.ps1` 直调）。
 
@@ -71,6 +73,8 @@ scripts\start_demo.cmd -Swap                    rem 两块屏的视图对调
 | `桥没起来` + 日志里 `enable torque timeout` | follower 总线上有舵机没响应（常是刚 attach 完总线没稳，或供电不足） | 等两秒重跑；仍失败就检查电源和线 |
 | `enable torque timeout on 'wrist_flex'(ID 4)` | 中段舵机掉线，通常是线松 | 重新插紧腕部那条线 |
 | 端口被占（`WinError 10048`） | 上次没停干净 | 脚本会自动清；手工：`netstat -ano \| findstr :8000` 再 `taskkill /F /PID` |
+| `桥起来了，但 leader 没连上` / 清单里 `遥操 不可用` | leader 串口开了但没连上：校准提问没过去、口反了、或线松 | 看 `.tmp\bridge.log` 里 `leader 连不上` 那行。两个 CH343 都能握手，只有 `Present_Voltage` 能区分（leader ≈ 5.4V，应是 `/dev/ttyACM0`）。要重新校准：WSL 里加 `--interactive-leader` 手动起一次 |
+| 页面「状态帧 重连中」但 `.tmp\bridge.log` 里读数 50Hz、写入也在跑 | 后端连不上桥：WSL2 的 localhost 转发（`wslrelay`）没起来 | 脚本已经改成用 WSL 的 IP 连桥（看清单里 `桥 ws://172.x.x.x:8765`）。手工起后端时：`--remote-url ws://$(wsl hostname -I \| awk '{print $1}'):8765` |
 | 页面「状态帧 重连中」 | 后端没起，或页面连的不是 8001 | 看 `.tmp\backend.err.log` |
 | 页面能开但数字层不动 | 桥在 `hold` 档（不写指令） | 按 `2` 或 `1` |
 | 臂变硬、掰不动 | 三档都要求舵机使能，这是正常的 | 想手掰：`scripts\stop_demo.cmd` 或 `-KeepBridge` 后用 `--release-torque` 起桥 |

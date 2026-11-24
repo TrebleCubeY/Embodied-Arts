@@ -47,8 +47,10 @@ USB 小键盘发的都是这同一条消息。切档时有平滑过渡（`RAMP_S
 
 import argparse
 import asyncio
+import io
 import json
 import math
+import signal
 import sys
 import threading
 import time
@@ -454,9 +456,11 @@ class SerialLeader:
     MODULES = ("lerobot.teleoperators.so_leader", "lerobot.teleoperators.so101_leader")
     CONFIGS = ("SO101LeaderConfig", "SOLeaderTeleopConfig", "SO100LeaderConfig", "SOLeaderConfig")
 
-    def __init__(self, port: str, teleop_id: str):
+    def __init__(self, port: str, teleop_id: str, auto_confirm: bool = True):
         self.port = port
         self.teleop_id = teleop_id
+        # 见 connect()：默认替他按回车，走"用已有校准文件"这一支
+        self.auto_confirm = auto_confirm
         self.leader = None
 
     def _load(self):
@@ -496,7 +500,19 @@ class SerialLeader:
             print(f"  [!] {cfg_cls.__name__} 没有 id 字段，{self.teleop_id} 这份校准可能用不上")
 
         self.leader = cls(cfg_cls(**kwargs))
-        self.leader.connect()
+        if self.auto_confirm:
+            # lerobot 的 connect() 会问「按回车用已有校准文件，还是输 c 重新校准」并等 stdin。
+            # 脚本起桥时没有 tty（_bridge.sh 用 nohup），input() 立刻抛 EOFError，
+            # 于是 leader 被当成"连不上"：桥照常推帧、页面一切正常，
+            # 只有手掰 leader 时 follower 一动不动 —— 这是最难查的一类故障。
+            # 喂几个空行等于替他按回车（用已有校准文件）。要手动重新校准就加 --interactive-leader。
+            old_stdin, sys.stdin = sys.stdin, io.StringIO("\n" * 8)
+            try:
+                self.leader.connect()
+            finally:
+                sys.stdin = old_stdin
+        else:
+            self.leader.connect()
         # leader 要能被人手掰动，扭矩必须关
         bus = getattr(self.leader, "bus", None)
         if bus is not None and hasattr(bus, "disable_torque"):
@@ -917,11 +933,43 @@ def parse_args():
         help="起手就断开 follower 扭矩（只读看姿态用，臂可以手掰）。默认保持扭矩，"
         "因为三档里没有一档是松开的",
     )
+    ap.add_argument(
+        "--interactive-leader",
+        action="store_true",
+        help="连 leader 时保留交互：可以输 c 重新校准。默认自动回车（用已有校准文件），"
+        "脚本/后台起桥必须这样，否则没有 tty 会被校准提问卡住",
+    )
     ap.add_argument("--fake", action="store_true", help="不连串口，用正弦扫掠验证链路")
     return ap.parse_args()
 
 
+def install_signal_handlers():
+    """把 SIGINT / SIGTERM 都接回"正常收尾"这条路径。
+
+    两个理由，都是实测踩出来的：
+
+    - 非交互 shell 里用 nohup 起的后台作业会**继承「忽略 SIGINT」**
+      （`/proc/<pid>/status` 的 SigIgn 里有 0x2），所以 `kill -INT` 一点作用都没有，
+      stop 脚本看上去发了信号、桥却还在跑。
+    - SIGTERM 默认直接终止，不走 finally，舵机就留在使能状态，
+      下一次 connect 容易报 `enable torque timeout`。
+
+    统一抛 KeyboardInterrupt，让它走 asyncio.run 外面那条收尾：停 reader、
+    断 follower（释放扭矩）、关串口。
+    """
+
+    def _graceful(signum, _frame):
+        raise KeyboardInterrupt
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(sig, _graceful)
+        except (ValueError, OSError):
+            pass  # 非主线程调用时装不上，忽略
+
+
 def main() -> int:
+    install_signal_handlers()
     args = parse_args()
     if args.teleop:
         args.drive = DRIVE_TELEOP
@@ -945,7 +993,11 @@ def main() -> int:
     )
     leader = None
     if not args.no_leader:
-        leader = FakeLeader() if args.fake else SerialLeader(args.leader_port, args.leader_id)
+        leader = (
+            FakeLeader()
+            if args.fake
+            else SerialLeader(args.leader_port, args.leader_id, auto_confirm=not args.interactive_leader)
+        )
 
     print(f"桥进程  连接 {'模拟源' if args.fake else args.port_dev}")
     try:
@@ -967,6 +1019,8 @@ def main() -> int:
             print(f"  [!] leader 连不上：{leader_error}")
             print("      预设动作与停住照常可用；切到「遥操跟随」时臂不会动。")
             print(f"      查 --leader-port（现在 {args.leader_port}）与 --leader-id（现在 {args.leader_id}）。")
+            print("      校准文件在 ~/.cache/huggingface/lerobot/calibration/teleoperators/so_leader/；")
+            print("      缺的话用 --interactive-leader 起一次，看到提问后输 c 重新校准。")
             leader = None
 
     try:

@@ -62,6 +62,20 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
+# wsl.exe 的输出是 UTF-8，控制台默认按 GBK 解 —— 桥报的那几行中文会全变成问号，
+# 下面的日志判断（"遥操源 未打开"）也就跟着失效。这两行必须在任何 wsl 调用之前。
+try {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch { }
+
+# PS 5.1 的 Start-Process 复制环境变量时对键名大小写敏感：机器上同时存在
+# HTTPS_PROXY 和 https_proxy 就直接抛「已添加项」，后端根本起不来。
+# 本机代理不常开，而且后端连 localhost / WSL IP 本来就走 proxy=None，清掉最省事。
+foreach ($v in @('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY')) {
+  if (Test-Path "Env:$v") { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
+}
+
 $Root = Split-Path -Parent $PSScriptRoot
 $Tmp = Join-Path $Root '.tmp'
 New-Item -ItemType Directory -Path $Tmp -Force | Out-Null
@@ -86,12 +100,13 @@ function Write-Note([string]$text) { Write-Host ("     ..  {0}" -f $text) -Foreg
 function Write-Warn2([string]$text) { Write-Host ("     !   {0}" -f $text) -ForegroundColor Yellow }
 function Write-Err2([string]$text) { Write-Host ("     X   {0}" -f $text) -ForegroundColor Red }
 
-function Test-Tcp([int]$p, [int]$timeoutSec = 10) {
+function Test-Tcp([string]$h, [int]$p, [int]$timeoutSec = 10) {
+  if (-not $h) { $h = '127.0.0.1' }
   $end = (Get-Date).AddSeconds($timeoutSec)
   while ((Get-Date) -lt $end) {
     try {
       $c = New-Object Net.Sockets.TcpClient
-      $c.Connect('127.0.0.1', $p)
+      $c.Connect($h, $p)
       $c.Close()
       return $true
     } catch {
@@ -152,11 +167,34 @@ Write-Host ("  模式 {0}   视图 {1}   端口 {2}/{3}" -f $Mode, $View, $Port,
 
 Write-Step 1 '清理端口'
 foreach ($p in @($Port, $WsPort, $BridgePort)) { Stop-Port $p }
+if (-not $NoRobot) {
+  # 上一轮的桥跑在 WSL 里，8765 是 WSL 的端口，Windows 的 netstat 看不见，
+  # 不清掉的话新桥 bind 失败、脚本只会报一句"桥没起来"。
+  $stopSh = $WslRoot + '/scripts/stop_bridge.sh'
+  $o = (wsl -d $Wsl -- bash $stopSh 2>&1)
+  foreach ($line in @($o)) { if ("$line".Trim()) { Write-Note ("{0}" -f "$line".TrimEnd()) } }
+}
 Write-Ok ("{0} / {1} / {2} 都空着" -f $Port, $WsPort, $BridgePort)
 
 # ───────────────────────────────────────────────────────── 2 USB
 
 $bridgeReady = $false
+$teleopReady = $false
+
+# 桥跑在 WSL 里。Windows 侧本来可以用 127.0.0.1 连 —— 那要靠 WSL2 的端口转发（wslrelay），
+# 而这个 relay 不一定在（WSL 冷启动后、以及只被 wsl.exe 唤醒时都可能是缺的）。
+# 实测这时候 127.0.0.1:8765 连不上、WSL 的 IP 一直通，所以直接用 IP，不赌转发。
+function Get-WslIp([string]$Distro) {
+  try {
+    $raw = (wsl -d $Distro -- hostname -I) -join ' '
+    return ($raw -split '\s+' | Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' } | Select-Object -First 1)
+  } catch { return '' }
+}
+$BridgeHost = '127.0.0.1'
+if (-not $NoRobot) {
+  $ip = Get-WslIp $Wsl
+  if ($ip) { $BridgeHost = $ip } else { Write-Warn2 '取不到 WSL 的 IP，改用 127.0.0.1（要靠 localhost 转发）' }
+}
 if ($NoRobot) {
   Write-Step 2 '跳过桥（-NoRobot：动作库当替身，臂不会动）'
 } else {
@@ -195,15 +233,37 @@ if ($NoRobot) {
   if ($devOk) {
     Write-Step 3 '起桥（WSL，后台）'
     $script = $WslRoot + '/scripts/_bridge.sh'
-    $out = (wsl -d $Wsl -- bash $script $Mode 2>&1) -join "`n"
-    Write-Note $out
-    if (Test-Tcp $BridgePort 15) {
-      Write-Ok ("桥在 ws://127.0.0.1:{0} 上应答" -f $BridgePort)
+    $out = (wsl -d $Wsl -- bash $script $Mode 2>&1)
+    foreach ($line in @($out)) {
+      if ("$line".Trim()) { Write-Note ("{0}" -f "$line".TrimEnd()) }
+    }
+    $logPath = Join-Path $Tmp 'bridge.log'
+    # 日志是 UTF-8，PS 5.1 的 Get-Content 默认按 ANSI 读，不指定编码下面的中文匹配会全落空
+    $logText = ''
+    if (Test-Path $logPath) {
+      $raw = Get-Content $logPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+      if ($raw) { $logText = $raw }
+    }
+
+    if (Test-Tcp $BridgeHost $BridgePort 15) {
+      Write-Ok ("桥在 ws://{0}:{1} 上应答" -f $BridgeHost, $BridgePort)
       $bridgeReady = $true
+      # 桥占着端口不等于能遥操：leader 没连上时它照样推帧、页面一切正常，只有手掰 leader 不动。
+      # 所以这里必须看日志，不能只测端口。
+      if ($logText -match '遥操源\s+未打开') {
+        Write-Err2 '桥起来了，但 leader 没连上 —— 「遥操跟随」档手掰 leader 不会有反应'
+        if ($logText -match 'leader 连不上：([^\r\n]+)') { Write-Note ('leader 报错：' + $Matches[1]) }
+        Write-Note '两个串口都能握手，只有 Present_Voltage 能分出 follower(12V)/leader(5.4V)：leader 应在 /dev/ttyACM0'
+        Write-Note '校准文件：~/.cache/huggingface/lerobot/calibration/teleoperators/so_leader/zyf_leader.json'
+        Write-Note '重跑脚本前先看 .tmp\bridge.log；要重新校准就在 WSL 里手动加 --interactive-leader 起一次'
+      } else {
+        Write-Ok 'leader 已连上（遥操可用）'
+        $teleopReady = $true
+      }
     } else {
       Write-Err2 '桥没起来 —— 看 .tmp\bridge.log 最后几行：'
-      if (Test-Path (Join-Path $Tmp 'bridge.log')) {
-        Get-Content (Join-Path $Tmp 'bridge.log') -Tail 8 | ForEach-Object { Write-Host ("       $_") -ForegroundColor DarkGray }
+      if (Test-Path $logPath) {
+        Get-Content $logPath -Tail 8 | ForEach-Object { Write-Host ("       $_") -ForegroundColor DarkGray }
       }
     }
   }
@@ -221,14 +281,14 @@ elseif (-not $NoRobot -and -not $bridgeReady) {
 }
 
 $pyArgs = @('-u', 'twin/server/main.py', '--source', $src, '--http-port', $Port, '--ws-port', $WsPort)
-if ($src -eq 'remote') { $pyArgs += @('--remote-url', "ws://localhost:$BridgePort") }
+if ($src -eq 'remote') { $pyArgs += @('--remote-url', "ws://${BridgeHost}:$BridgePort") }
 
 $backend = Start-Process -FilePath $Py -ArgumentList $pyArgs -WorkingDirectory $Root -PassThru -WindowStyle Hidden `
   -RedirectStandardOutput (Join-Path $Tmp 'backend.log') `
   -RedirectStandardError (Join-Path $Tmp 'backend.err.log')
 $backend.Id | Set-Content (Join-Path $Tmp 'backend.pid')
 
-if (Test-Tcp $Port 15) {
+if (Test-Tcp '127.0.0.1' $Port 15) {
   Write-Ok ("页面在 http://127.0.0.1:{0}/   数据源 {1}" -f $Port, $src)
 } else {
   Write-Err2 '后端没起来 —— 看 .tmp\backend.err.log'
@@ -316,8 +376,10 @@ if ($NoBrowser) {
 
 Write-Host ''
 Write-Host '─────────────────────────────────────────────' -ForegroundColor DarkGray
-$bridgeText = if ($NoRobot) { '未起（-NoRobot）' } elseif ($bridgeReady) { "ws://127.0.0.1:$BridgePort" } else { '失败' }
+$bridgeText = if ($NoRobot) { '未起（-NoRobot）' } elseif ($bridgeReady) { "ws://${BridgeHost}:$BridgePort" } else { '失败' }
+$teleopText = if ($NoRobot) { '未起（-NoRobot）' } elseif ($teleopReady) { '可用 · leader 已连上' } else { '不可用 · leader 没连上，只能演预设动作' }
 Write-Host ("  桥      {0}" -f $bridgeText)
+Write-Host ("  遥操    {0}" -f $teleopText)
 Write-Host ("  后端    http://127.0.0.1:{0}/  数据源 {1}" -f $Port, $src)
 Write-Host ("  窗口    {0}" -f ($(if ($opened.Count) { $opened -join '  ' } else { '未开' })))
 Write-Host ("  档位    {0}" -f $Mode)
@@ -329,4 +391,7 @@ Write-Host ''
 
 if (-not $NoRobot -and -not $bridgeReady) {
   Write-Host '提示：桥没起来时页面仍然能用（动作库驱动），修好 USB 后重跑这个脚本即可。' -ForegroundColor Yellow
+}
+if (-not $NoRobot -and $bridgeReady -and -not $teleopReady) {
+  Write-Host '提示：遥操档现在不会动（leader 没连上）。预设动作与停住不受影响。' -ForegroundColor Yellow
 }

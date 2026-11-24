@@ -15,6 +15,13 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+
+# wsl.exe 吐的是 UTF-8，控制台默认按 GBK 解，桥那几行中文会变成问号
+try {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch { }
+
 $Root = Split-Path -Parent $PSScriptRoot
 $Tmp = Join-Path $Root '.tmp'
 
