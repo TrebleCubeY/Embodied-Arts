@@ -9,7 +9,7 @@ import {
   DRIVE_LABELS,
   defaultStateUrl,
 } from './frame.js';
-import { RED_BLOCK, createStage, addGround, addRedBlock, showPanel } from './stage.js';
+import { RED_BLOCK, createStage, addGround, addRedBlock, showPanel, isSelftest } from './stage.js';
 import { createBlockRig, jawOpeningMm } from './block.js';
 import {
   loadRobot,
@@ -91,6 +91,9 @@ if (VIEW_TWIN) {
 let robot = null;
 let controls = null;
 let panel = null;
+// 左屏右下角那个「关节角」浮层菜单。它和代码层的抽屉是同一个组件、同一份关节值，
+// 只是长在了像这一侧 —— 观众看着像，想知道六个角是多少，不用去看另一块屏。
+let angleMenu = null;
 let link = null;
 let block = null;
 let codeLayer = null;
@@ -195,6 +198,32 @@ function buildCodeLayer(joints) {
   }
 }
 
+// ─────────────────────────────────────────────────────────── 左屏的角度菜单
+
+function buildAngleMenu(joints) {
+  const host = document.getElementById('angle-menu');
+  if (!host) return;
+  angleMenu = createJointPanel(host, joints, {
+    title: '关节角',
+    onManual: () => {
+      view.takeOver('menu');
+      // 双屏时另一块屏（代码层）也要知道关节值现在由人写
+      sendControl({ type: 'override', on: true });
+    },
+    onPause: () => sendControl({ type: 'pause' }),
+    onResume: () => sendControl({ type: 'resume' }),
+    onFollow: () => {
+      view.release('menu');
+      sendControl({ type: 'override', on: false });
+    },
+    neutralDeg: () => link?.stats?.neutralDeg,
+    onKeyframe: () => {
+      const deg = status.appliedDeg.map((v) => Number(v.toFixed(2)));
+      link?.send({ type: 'keyframe', joints: deg });
+    },
+  });
+}
+
 // ─────────────────────────────────────────────────────────── 连后端
 
 function onLinkState(stats) {
@@ -270,8 +299,10 @@ function startLink() {
       if (msg.type === 'action') {
         codeLayer?.push('action', `轮到 ${msg.title}`);
         codeLayer?.setAction(msg);
-        // 只有夹取类动作才让方块出现（方块平时不存在，见 block.js）
-        block?.setAction(msg.name);
+        // 只有夹取类动作才让方块出现（方块平时不存在，见 block.js）。
+        // 自检模式下不给：那边是手动摆姿态验证抓取，后端这时可能正在播别的动作，
+        // 事件一来就会把 allowGrab 冲掉，导致"有时抓得住有时抓不住"。
+        if (!isSelftest) block?.setAction(msg.name);
       } else if (msg.type === 'state') {
         codeLayer?.push('transport', msg.paused ? '后端已暂停' : '后端已恢复');
       } else if (msg.type === 'hello') {
@@ -350,6 +381,8 @@ if (stage) {
 
       // both 视图在这里建代码层；twin 视图只有 3D，不建
       if (VIEW_CODE) buildCodeLayer(joints);
+      // 左屏的角度菜单两个视图都可以有，但它长在 #screen-a 里，只有 twin/both 用得上
+      if (VIEW_TWIN) buildAngleMenu(joints);
 
       // 调试钩子两个视图都要有：自检和探针靠 window.__TWIN__ 判断页面是否就绪
       installDebug({
@@ -418,6 +451,7 @@ if (stage) {
     topline.sync({ linkState, hz, paused, viewState: state });
     codeLayer?.sync(syncPayload());
     panel?.sync({ viewState: state, appliedRad, linkState, hz, paused });
+    angleMenu?.sync({ viewState: state, appliedRad, linkState, hz, paused });
 
     const dbg = window.__TWIN__;
     if (dbg && dbg.ready) {

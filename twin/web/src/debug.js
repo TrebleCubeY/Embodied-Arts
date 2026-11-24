@@ -28,7 +28,10 @@ export function installDebug({ robot, renderer, scene, camera, framing, joints, 
         Math.abs(buf[i] - BG_RGB[0]) +
         Math.abs(buf[i + 1] - BG_RGB[1]) +
         Math.abs(buf[i + 2] - BG_RGB[2]);
-      if (d > 24) hit += 1;
+      // 阈值 200：只把「深色的东西」算作非背景。
+      // 白底改版后背景里有淡网格（差约 100）和投影（差约 110），
+      // 旧阈值 24 会把它们也算进去，于是「摆关节后画面变了」这条被噪声稀释成 0.1pp。
+      if (d > 200) hit += 1;
     }
     return total ? hit / total : 0;
   }
@@ -156,6 +159,14 @@ export function installDebug({ robot, renderer, scene, camera, framing, joints, 
   window.__TWIN_RESET_BLOCK__ = () => {
     if (!block) return false;
     block.reset();
+    return true;
+  };
+
+  // 方块只在「正在演夹取动作」时才允许出现（见 block.js 的 allowGrab）。
+  // 正常运行时这个状态由后端的 action 事件推动；自检里没有事件流，所以留一个手动入口。
+  window.__TWIN_SET_ACTION__ = (name) => {
+    if (!block) return false;
+    block.setAction(name ?? null);
     return true;
   };
 

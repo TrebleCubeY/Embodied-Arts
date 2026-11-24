@@ -7,9 +7,9 @@ export const isSelftest = params.has('selftest');
 export const showPanel = params.get('panel') !== '0';
 export const showDiag = params.has('diag');
 
-// 场景底色。必须和 styles.css 的 --stage 是同一个值 ——
+// 场景底色。必须和 styles.css 里 #screen-a 的 --stage（也就是 --paper）是同一个值 ——
 // 自检靠"非背景像素占比"判断模型画出来了没，两边不一致就会把整个画面算成背景。
-export const BG_HEX = 0x0e1114;
+export const BG_HEX = 0xf3f1ec;
 
 export function createStage(container) {
   const renderer = new THREE.WebGLRenderer({
@@ -19,7 +19,12 @@ export function createStage(container) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.shadowMap.enabled = false;
+  // 白底上的黑物件需要一层投影才落得住地，否则看起来像贴纸。
+  // 自检跑在无头浏览器的软件渲染（SwiftShader）上，2048² 的 PCFSoft 阴影会把它拖到
+  // 每帧上百毫秒，主线程被占住、WebSocket 的帧回调堆在一起，自检的"最大帧间隔"就假报。
+  // 所以自检档降一档：1024² + 便宜一点的 PCF。真机有 GPU，用完整质量。
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = isSelftest ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -33,17 +38,32 @@ export function createStage(container) {
     100,
   );
 
-  // STL 只有几何没有贴图，靠光照读出体积。三点光够用。
-  // 强度是调过的：之前 2.6/1.15 在白色打印件上直接过曝，平面糊成一片白，
-  // 分不出转折。降下来之后明暗层次才出来。
-  const key = new THREE.DirectionalLight(0xffffff, 2.0);
-  key.position.set(1.4, 2.2, 1.6);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.66);
-  fill.position.set(-1.8, 0.7, -1.0);
-  const rim = new THREE.DirectionalLight(0xffffff, 0.38);
-  rim.position.set(-0.4, 0.6, -2.0);
+  // 白底 + 黑物：难点是暗部会不会死黑。所以环境光要给足（当白墙的反光），
+  // 再靠一盏背后的 rim 勾出轮廓 —— 黑色物件的体积全靠这条轮廓线读出来。
+  const key = new THREE.DirectionalLight(0xfff4e2, 2.35);
+  key.position.set(1.5, 2.3, 1.5);
+  key.castShadow = true;
+  const shadowSize = isSelftest ? 1024 : 2048;
+  key.shadow.mapSize.set(shadowSize, shadowSize);
+  key.shadow.camera.near = 0.1;
+  key.shadow.camera.far = 6;
+  key.shadow.camera.left = -0.85;
+  key.shadow.camera.right = 0.85;
+  key.shadow.camera.top = 0.95;
+  key.shadow.camera.bottom = -0.35;
+  key.shadow.bias = -0.0006;
+  key.shadow.normalBias = 0.015;
+
+  const fill = new THREE.DirectionalLight(0xe4edf8, 0.55);
+  fill.position.set(-1.9, 0.7, -1.0);
+
+  // 轮廓光：从背后偏左打过来，只为了让黑色边缘亮出一条线
+  const rim = new THREE.DirectionalLight(0xffffff, 0.95);
+  rim.position.set(-0.5, 0.55, -2.1);
+
   scene.add(key, fill, rim);
-  scene.add(new THREE.HemisphereLight(0xdce6f2, 0x1b2029, 0.92));
+  // 半球光当"白墙反射"：地面亮度托住暗部，天空色保持纸的暖调
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xcfc8ba, 0.85));
 
   function resize() {
     const w = container.clientWidth;
@@ -58,16 +78,30 @@ export function createStage(container) {
   return { renderer, scene, camera, resize };
 }
 
-// 接地网格：给机械臂一个参照平面，不然悬空的模型读不出姿态和高度
+// 接地：一张极淡的坐标网格 + 一层只显示阴影的平面。
+//
+// 网格交代尺度（不然悬空的模型读不出姿态和高度），阴影交代重力（不然它像一张贴纸）。
+// 白底上这两样都必须很轻 —— 观众先看到的是机械臂，不是背景。
 export function addGround(scene, radius) {
   const cell = 0.05;
   const span = Math.max(0.6, Math.ceil((radius * 3) / cell) * cell);
   const divisions = Math.round(span / cell);
 
-  const grid = new THREE.GridHelper(span, divisions, 0x2f353a, 0x1b1f23);
+  const grid = new THREE.GridHelper(span, divisions, 0xd7d1c4, 0xe2ddd2);
   grid.material.transparent = true;
-  grid.material.opacity = 0.9;
+  grid.material.opacity = 0.7;
   scene.add(grid);
+
+  const shadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(span * 1.7, span * 1.7),
+    new THREE.ShadowMaterial({ color: 0x14120e, opacity: 0.17 }),
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = 0.0006;
+  shadow.receiveShadow = true;
+  shadow.renderOrder = -1;
+  scene.add(shadow);
+
   return grid;
 }
 
