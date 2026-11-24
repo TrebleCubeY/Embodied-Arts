@@ -14,6 +14,9 @@ twin/web/vendor/*
 !twin/web/vendor/SOURCES.md
 twin/web/models/
 
+# VLA 权重（Evo-1 + InternVL3，约 3.5GB），不进仓库
+models/
+
 
 # ---- 运行产物 ----
 # 后端每次启动写一个 JSONL 留档（只保留最近 5 个），自检会存一张截图
